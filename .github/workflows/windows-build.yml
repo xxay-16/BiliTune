@@ -1,0 +1,142 @@
+name: Windows Build
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Build Windows x64 packages
+    runs-on: windows-2022
+    timeout-minutes: 45
+    env:
+      FLUTTER_SUPPRESS_ANALYTICS: 'true'
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Check out the tested Flutter SDK
+        uses: actions/checkout@v6
+        with:
+          repository: flutter/flutter
+          ref: '3.41.9'
+          path: .flutter
+          persist-credentials: false
+
+      - name: Cache Flutter artifacts and Dart packages
+        uses: actions/cache@v5
+        with:
+          path: |
+            .flutter/bin/cache
+            ~/AppData/Local/Pub/Cache
+          key: windows-flutter-3.41.9-${{ hashFiles('pubspec.lock') }}
+          restore-keys: windows-flutter-3.41.9-
+
+      - name: Set up Flutter
+        run: |
+          "$env:GITHUB_WORKSPACE\.flutter\bin" >> $env:GITHUB_PATH
+          & "$env:GITHUB_WORKSPACE\.flutter\bin\flutter.bat" --version
+          if ($LASTEXITCODE -ne 0) { throw 'Flutter SDK setup failed.' }
+
+      - name: Set up NuGet
+        uses: NuGet/setup-nuget@v3
+        with:
+          nuget-version: '6.x'
+
+      - name: Read package version
+        id: version
+        run: |
+          $pubspec = Get-Content pubspec.yaml -Raw
+          if ($pubspec -notmatch '(?m)^version:\s*([^\s#]+)') {
+            throw 'pubspec.yaml is missing its version.'
+          }
+          $versionName, $buildNumber = $Matches[1] -split '\+', 2
+          if (-not $buildNumber) { $buildNumber = '1' }
+          $shortSha = $env:GITHUB_SHA.Substring(0, 7)
+          "version_name=$versionName" >> $env:GITHUB_OUTPUT
+          "build_number=$buildNumber" >> $env:GITHUB_OUTPUT
+          "artifact_version=$versionName-$buildNumber-$shortSha" >> $env:GITHUB_OUTPUT
+
+      - name: Install locked dependencies
+        run: flutter pub get --enforce-lockfile
+
+      - name: Analyze
+        run: flutter analyze --no-pub
+
+      - name: Test
+        run: flutter test --no-pub
+
+      - name: Build Windows release
+        env:
+          VERSION_NAME: ${{ steps.version.outputs.version_name }}
+          BUILD_NUMBER: ${{ steps.version.outputs.build_number }}
+        run: >
+          flutter build windows --release --no-pub
+          --build-name "$env:VERSION_NAME"
+          --build-number "$env:BUILD_NUMBER"
+
+      - name: Install Inno Setup
+        run: |
+          choco install innosetup --no-progress -y
+          if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed.' }
+
+      - name: Package installer and portable build
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.artifact_version }}
+        run: ./scripts/package-windows.ps1 -Version $env:PACKAGE_VERSION
+
+      - name: Upload installer
+        id: installer
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/windows/*.exe
+          archive: false
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload portable build
+        id: portable
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/windows/*.zip
+          archive: false
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload checksums
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/windows/SHA256SUMS.txt
+          archive: false
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Write download summary
+        env:
+          INSTALLER_URL: ${{ steps.installer.outputs.artifact-url }}
+          PORTABLE_URL: ${{ steps.portable.outputs.artifact-url }}
+          PACKAGE_VERSION: ${{ steps.version.outputs.artifact_version }}
+        run: |
+          @"
+          ### Windows x64 构建完成
+
+          版本：$env:PACKAGE_VERSION
+
+          - [下载安装版 EXE]($env:INSTALLER_URL)
+          - [下载免安装 ZIP]($env:PORTABLE_URL)
+
+          免安装版请完整解压后运行 bilitune.exe，保留 DLL 和 data 文件夹。
+          安装包和 SHA256SUMS.txt 也可在本次运行的 Artifacts 区域下载，保留 30 天。
+          "@ >> $env:GITHUB_STEP_SUMMARY

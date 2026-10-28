@@ -70,6 +70,20 @@ flutter build apk --release
 
 Release 包由 GitHub Actions 在推送匹配 `pubspec.yaml` 版本的 tag 时自动构建，例如 `version: 0.0.8+2` 可使用 `v0.0.8` 或 `v0.0.8+2`。
 
+### Windows 自动打包
+
+推送到 `main` 或 `master` 后，会自动运行独立的 [Windows Build](https://github.com/xxay-16/BiliTune/actions/workflows/windows-build.yml) 工作流。也可以在该页面点击 **Run workflow** 手动打包，不需要 Android 签名密钥。
+
+构建会使用 Flutter 3.41.9 和锁定的依赖，先运行静态检查和测试，再生成 Windows x64 安装版 `.exe`、免安装版 `.zip` 和 `SHA256SUMS.txt`。打开成功的构建记录，在摘要或 **Artifacts** 区域下载文件，产物保留 30 天；文件名包含版本号和提交短哈希。
+
+免安装版请完整解压后运行 `bilitune.exe`。本地已有 Release 构建和 Inno Setup 时，也可运行以下命令生成相同格式的包（`-Version` 可自行指定）：
+
+```powershell
+./scripts/package-windows.ps1 -Version 0.1.4-5
+```
+
+只生成免安装版时，追加 `-SkipInstaller`。
+
 ## 致谢
 参考了以下优秀项目
 
