@@ -31,6 +31,16 @@ std::string StringFromValue(const EncodableValue* value) {
   return text == nullptr ? std::string() : *text;
 }
 
+std::wstring Utf16FromUtf8(const std::string& value) {
+  if (value.empty()) return L"";
+  const int length = MultiByteToWideChar(
+      CP_UTF8, 0, value.data(), static_cast<int>(value.size()), nullptr, 0);
+  std::wstring result(static_cast<size_t>(length), L'\0');
+  MultiByteToWideChar(CP_UTF8, 0, value.data(), static_cast<int>(value.size()),
+                      result.data(), length);
+  return result;
+}
+
 UINT ModifiersFromList(const EncodableList* values) {
   UINT modifiers = MOD_NOREPEAT;
   if (!values) {
@@ -119,6 +129,7 @@ bool FlutterWindow::OnCreate() {
   RegisterPlugins(flutter_controller_->engine());
   ConfigureHotkeyChannel();
   ConfigureDownloadChannel();
+  ConfigureTrayChannel();
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
@@ -137,6 +148,8 @@ void FlutterWindow::OnDestroy() {
   UnregisterHotkeys();
   hotkey_channel_ = nullptr;
   download_channel_ = nullptr;
+  tray_channel_ = nullptr;
+  tray_menu_ = nullptr;
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }
@@ -148,6 +161,10 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  if (tray_menu_) {
+    const auto result = tray_menu_->HandleMessage(message, wparam, lparam);
+    if (result) return *result;
+  }
   // Give Flutter, including plugins, an opportunity to handle window messages.
   if (flutter_controller_) {
     std::optional<LRESULT> result =
@@ -169,6 +186,45 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
   }
 
   return Win32Window::MessageHandler(hwnd, message, wparam, lparam);
+}
+
+void FlutterWindow::ConfigureTrayChannel() {
+  tray_menu_ = std::make_shared<TrayMenu>(GetHandle());
+  tray_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(),
+          "com.wep56.bilitune/tray_menu",
+          &flutter::StandardMethodCodec::GetInstance());
+  tray_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
+                 result) {
+        const auto menu = tray_menu_;
+        if (!menu) {
+          result->Success(EncodableValue());
+          return;
+        }
+        if (call.method_name() == "update") {
+          const auto* arguments = call.arguments();
+          const auto* map = arguments == nullptr
+              ? nullptr : std::get_if<EncodableMap>(arguments);
+          if (map == nullptr) {
+            result->Error("invalid_arguments", "Expected tray playback state");
+            return;
+          }
+          const auto* playing_value = FindMapValue(*map, "isPlaying");
+          const auto* playing = playing_value == nullptr
+              ? nullptr : std::get_if<bool>(playing_value);
+          menu->Update(Utf16FromUtf8(StringFromValue(FindMapValue(*map, "title"))),
+                       playing != nullptr && *playing);
+          result->Success();
+        } else if (call.method_name() == "show") {
+          const std::string action = menu->Show();
+          result->Success(action.empty() ? EncodableValue() : EncodableValue(action));
+        } else {
+          result->NotImplemented();
+        }
+      });
 }
 
 void FlutterWindow::ConfigureHotkeyChannel() {

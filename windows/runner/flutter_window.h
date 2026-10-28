@@ -11,6 +11,7 @@
 #include <string>
 
 #include "win32_window.h"
+#include "tray_menu.h"
 
 // A window that does nothing but host a Flutter view.
 class FlutterWindow : public Win32Window {
@@ -38,10 +39,13 @@ class FlutterWindow : public Win32Window {
       hotkey_channel_;
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       download_channel_;
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> tray_channel_;
+  std::shared_ptr<TrayMenu> tray_menu_;
   std::map<int, std::string> hotkey_actions_;
 
   void ConfigureHotkeyChannel();
   void ConfigureDownloadChannel();
+  void ConfigureTrayChannel();
   void UnregisterHotkeys();
   bool RegisterHotkeyBinding(const std::string& action,
                              const std::string& key,

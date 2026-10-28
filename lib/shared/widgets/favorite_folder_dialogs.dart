@@ -18,7 +18,19 @@ Future<void> showCreateFavoriteFolderDialog(BuildContext context) {
 Future<bool?> showAddToFavoriteDialog(BuildContext context, Track track) {
   return showDialog<bool>(
     context: context,
-    builder: (_) => _AddToFavoriteDialog(track: track),
+    builder: (_) => _FavoriteFolderDialog(track: track),
+  );
+}
+
+Future<bool?> showMoveToFavoriteDialog(
+  BuildContext context,
+  Track track, {
+  required int fromMediaId,
+}) {
+  return showDialog<bool>(
+    context: context,
+    builder: (_) =>
+        _FavoriteFolderDialog(track: track, fromMediaId: fromMediaId),
   );
 }
 
@@ -160,16 +172,32 @@ class _CreateFavoriteFolderDialogState
   }
 }
 
-class _AddToFavoriteDialog extends ConsumerWidget {
-  const _AddToFavoriteDialog({required this.track});
+class _FavoriteFolderDialog extends ConsumerStatefulWidget {
+  const _FavoriteFolderDialog({required this.track, this.fromMediaId});
 
   final Track track;
+  final int? fromMediaId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_FavoriteFolderDialog> createState() =>
+      _FavoriteFolderDialogState();
+}
+
+class _FavoriteFolderDialogState extends ConsumerState<_FavoriteFolderDialog> {
+  bool _isSubmitting = false;
+  String? _errorMessage;
+
+  bool get _isMoving => widget.fromMediaId != null;
+
+  @override
+  Widget build(BuildContext context) {
     final colors = context.colors;
     final auth = ref.watch(authProvider);
     final library = ref.watch(libraryProvider);
+    final folders = library.folders
+        .where((folder) => folder.mediaId != widget.fromMediaId)
+        .toList(growable: false);
+    final errorMessage = _errorMessage ?? library.errorMessage;
 
     return Dialog(
       backgroundColor: colors.bgElevated,
@@ -185,7 +213,7 @@ class _AddToFavoriteDialog extends ConsumerWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      '添加到收藏夹',
+                      _isMoving ? '移动到其他收藏夹' : '添加到收藏夹',
                       style: AppTypography.titleM.copyWith(
                         color: colors.textPrimary,
                       ),
@@ -196,18 +224,24 @@ class _AddToFavoriteDialog extends ConsumerWidget {
                       Icons.close_rounded,
                       color: colors.textSecondary,
                     ),
-                    onPressed: () => Navigator.of(context).pop(),
+                    onPressed: _isSubmitting
+                        ? null
+                        : () => Navigator.of(context).pop(),
                   ),
                 ],
               ),
               const SizedBox(height: AppSpacing.s2),
               Text(
-                track.title,
+                widget.track.title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: AppTypography.body.copyWith(color: colors.textSecondary),
               ),
               const SizedBox(height: AppSpacing.s4),
+              if (_isSubmitting) ...[
+                const LinearProgressIndicator(minHeight: 2),
+                const SizedBox(height: AppSpacing.s3),
+              ],
               if (!auth.isSignedIn)
                 Text(
                   '需要先登录 Bilibili 账号。',
@@ -217,9 +251,9 @@ class _AddToFavoriteDialog extends ConsumerWidget {
                 )
               else if (library.isLoading)
                 const Center(child: CircularProgressIndicator())
-              else if (library.folders.isEmpty)
+              else if (folders.isEmpty)
                 Text(
-                  '还没有可用收藏夹，可以先新建一个。',
+                  _isMoving ? '没有其他可用收藏夹，请先新建一个收藏夹。' : '还没有可用收藏夹，可以先新建一个。',
                   style: AppTypography.body.copyWith(
                     color: colors.textSecondary,
                   ),
@@ -228,11 +262,11 @@ class _AddToFavoriteDialog extends ConsumerWidget {
                 Flexible(
                   child: ListView.separated(
                     shrinkWrap: true,
-                    itemCount: library.folders.length,
+                    itemCount: folders.length,
                     separatorBuilder: (_, _) =>
                         Divider(height: 1, color: colors.bgHighlight),
                     itemBuilder: (_, index) {
-                      final folder = library.folders[index];
+                      final folder = folders[index];
                       return ListTile(
                         contentPadding: EdgeInsets.zero,
                         leading: Icon(
@@ -255,29 +289,33 @@ class _AddToFavoriteDialog extends ConsumerWidget {
                             color: colors.textTertiary,
                           ),
                         ),
-                        onTap: () => _add(context, ref, folder),
+                        onTap: _isSubmitting || library.isUpdatingFavorites
+                            ? null
+                            : () => _submit(folder),
                       );
                     },
                   ),
                 ),
-              if (library.errorMessage != null) ...[
+              if (errorMessage != null) ...[
                 const SizedBox(height: AppSpacing.s3),
                 Text(
-                  library.errorMessage!,
+                  errorMessage,
                   style: AppTypography.caption.copyWith(color: colors.error),
                 ),
               ],
-              const SizedBox(height: AppSpacing.s4),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  icon: const Icon(Icons.create_new_folder_outlined),
-                  label: const Text('新建收藏夹'),
-                  onPressed: auth.isSignedIn
-                      ? () => showCreateFavoriteFolderDialog(context)
-                      : null,
+              if (!_isMoving) ...[
+                const SizedBox(height: AppSpacing.s4),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.create_new_folder_outlined),
+                    label: const Text('新建收藏夹'),
+                    onPressed: auth.isSignedIn && !_isSubmitting
+                        ? () => showCreateFavoriteFolderDialog(context)
+                        : null,
+                  ),
                 ),
-              ),
+              ],
             ],
           ),
         ),
@@ -285,26 +323,38 @@ class _AddToFavoriteDialog extends ConsumerWidget {
     );
   }
 
-  Future<void> _add(
-    BuildContext context,
-    WidgetRef ref,
-    BiliFavoriteFolder folder,
-  ) async {
+  Future<void> _submit(BiliFavoriteFolder folder) async {
+    if (_isSubmitting) return;
+    setState(() {
+      _isSubmitting = true;
+      _errorMessage = null;
+    });
     try {
-      await ref
-          .read(libraryProvider.notifier)
-          .addTrackToFavoriteFolder(track, folder.mediaId);
-      if (!context.mounted) return;
+      final notifier = ref.read(libraryProvider.notifier);
+      if (_isMoving) {
+        await notifier.moveTrackToFavoriteFolder(
+          widget.track,
+          fromMediaId: widget.fromMediaId!,
+          toMediaId: folder.mediaId,
+        );
+      } else {
+        await notifier.addTrackToFavoriteFolder(widget.track, folder.mediaId);
+      }
+      if (!mounted) return;
       final colors = context.colors;
       showAppToast(
         context,
-        message: '已添加到 ${folder.title}',
-        icon: Icons.favorite_rounded,
+        message: _isMoving ? '已移动到 ${folder.title}' : '已添加到 ${folder.title}',
+        icon: _isMoving
+            ? Icons.drive_file_move_outlined
+            : Icons.favorite_rounded,
         accentColor: colors.brand,
       );
       Navigator.of(context).pop(true);
-    } catch (_) {
-      // Error text is surfaced by LibraryState in the dialog.
+    } catch (error) {
+      if (mounted) setState(() => _errorMessage = error.toString());
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
     }
   }
 }

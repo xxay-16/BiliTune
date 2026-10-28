@@ -310,6 +310,24 @@ class BiliMusicRepository {
     await _api.deleteFavoriteResources(mediaId: mediaId, aids: [aid]);
   }
 
+  Future<void> moveTrackToFavoriteFolder({
+    required Track track,
+    required int fromMediaId,
+    required int toMediaId,
+  }) async {
+    if (fromMediaId == toMediaId) return;
+    final aid = track.aid ?? (await _hydrateVideoTrack(track)).aid;
+    if (aid == null) {
+      throw StateError('当前内容没有可移动的 av 号。');
+    }
+    await _api.dealFavoriteResource(
+      aid: aid,
+      addMediaIds: [toMediaId],
+      delMediaIds: [fromMediaId],
+    );
+  }
+
+  /// Loads every remaining page of the folder in the requested order.
   Future<List<Track>> favoriteFolderTracks(
     int mediaId, {
     int page = 1,
@@ -317,18 +335,37 @@ class BiliMusicRepository {
     String order = 'mtime',
     String? keyword,
   }) async {
-    final data = await _api.favoriteFolderItems(
-      mediaId: mediaId,
-      page: page,
-      pageSize: pageSize,
-      order: order,
-      keyword: keyword,
-    );
-    final items = _extractList(data['medias'] ?? data['list'] ?? data['items']);
-    return items
-        .whereType<Map>()
-        .map((item) => _trackFromFavMedia(Map<String, dynamic>.from(item)))
-        .toList(growable: false);
+    final tracks = <Track>[];
+    var currentPage = page;
+    while (true) {
+      final data = await _api.favoriteFolderItems(
+        mediaId: mediaId,
+        page: currentPage,
+        pageSize: pageSize,
+        order: order,
+        keyword: keyword,
+      );
+      final items = _extractList(
+        data['medias'] ?? data['list'] ?? data['items'],
+      );
+      if (items.isEmpty) break;
+
+      tracks.addAll(
+        items.whereType<Map>().map(
+          (item) => _trackFromFavMedia(Map<String, dynamic>.from(item)),
+        ),
+      );
+
+      // Prefer the API's pagination flag; a short page is only a fallback.
+      final hasMore = data['has_more'];
+      if (hasMore == false ||
+          hasMore == 0 ||
+          (hasMore != true && hasMore != 1 && items.length < pageSize)) {
+        break;
+      }
+      currentPage++;
+    }
+    return tracks.toList(growable: false);
   }
 
   Future<List<Track>> historyTracks({

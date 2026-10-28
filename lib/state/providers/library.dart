@@ -9,6 +9,7 @@ class LibraryState {
     this.recentHistory = const <Track>[],
     this.trackKeyword = '',
     this.isLoading = false,
+    this.isUpdatingFavorites = false,
     this.errorMessage,
   });
 
@@ -18,6 +19,7 @@ class LibraryState {
   final List<Track> recentHistory;
   final String trackKeyword;
   final bool isLoading;
+  final bool isUpdatingFavorites;
   final String? errorMessage;
 
   BiliFavoriteFolder? get selectedFolder =>
@@ -33,6 +35,7 @@ class LibraryState {
     List<Track>? recentHistory,
     String? trackKeyword,
     bool? isLoading,
+    bool? isUpdatingFavorites,
     Object? errorMessage = _unset,
   }) {
     return LibraryState(
@@ -44,6 +47,7 @@ class LibraryState {
       recentHistory: recentHistory ?? this.recentHistory,
       trackKeyword: trackKeyword ?? this.trackKeyword,
       isLoading: isLoading ?? this.isLoading,
+      isUpdatingFavorites: isUpdatingFavorites ?? this.isUpdatingFavorites,
       errorMessage: identical(errorMessage, _unset)
           ? this.errorMessage
           : errorMessage as String?,
@@ -245,20 +249,79 @@ class LibraryNotifier extends Notifier<LibraryState> {
   }
 
   Future<void> removeTrackFromFavoriteFolder(Track track, int mediaId) async {
-    state = state.copyWith(errorMessage: null);
+    _beginFavoriteUpdate();
     try {
       await ref
           .read(biliMusicRepositoryProvider)
           .removeTrackFromFavoriteFolder(track: track, mediaId: mediaId);
-      if (state.selectedFolderId == mediaId) {
-        final tracks = await ref
-            .read(biliMusicRepositoryProvider)
-            .favoriteFolderTracks(mediaId);
-        state = state.copyWith(selectedFolderTracks: tracks);
-      }
+      _removeLoadedFavoriteTrack(track, mediaId);
+      await _refreshFavoriteFolderMetadata();
     } catch (error) {
       state = state.copyWith(errorMessage: error.toString());
       rethrow;
+    } finally {
+      state = state.copyWith(isUpdatingFavorites: false);
+    }
+  }
+
+  Future<void> moveTrackToFavoriteFolder(
+    Track track, {
+    required int fromMediaId,
+    required int toMediaId,
+  }) async {
+    if (fromMediaId == toMediaId) return;
+    _beginFavoriteUpdate();
+    try {
+      await ref
+          .read(biliMusicRepositoryProvider)
+          .moveTrackToFavoriteFolder(
+            track: track,
+            fromMediaId: fromMediaId,
+            toMediaId: toMediaId,
+          );
+      _removeLoadedFavoriteTrack(track, fromMediaId);
+      await _refreshFavoriteFolderMetadata();
+    } catch (error) {
+      state = state.copyWith(errorMessage: error.toString());
+      rethrow;
+    } finally {
+      state = state.copyWith(isUpdatingFavorites: false);
+    }
+  }
+
+  void _beginFavoriteUpdate() {
+    if (state.isUpdatingFavorites) {
+      throw StateError('正在更新收藏夹，请稍候。');
+    }
+    state = state.copyWith(isUpdatingFavorites: true, errorMessage: null);
+  }
+
+  void _removeLoadedFavoriteTrack(Track track, int mediaId) {
+    if (state.selectedFolderId != mediaId) return;
+    state = state.copyWith(
+      selectedFolderTracks: state.selectedFolderTracks
+          .where((item) => _trackKey(item) != _trackKey(track))
+          .toList(growable: false),
+    );
+  }
+
+  Future<void> _refreshFavoriteFolderMetadata() async {
+    try {
+      final auth = ref.read(authProvider);
+      final mid = auth.credential?.mid ?? auth.account?.mid;
+      if (mid == null) return;
+      final folders = await ref
+          .read(biliMusicRepositoryProvider)
+          .favoriteFolders(mid);
+      final byId = {for (final folder in folders) folder.mediaId: folder};
+      state = state.copyWith(
+        folders: state.folders
+            .map((folder) => byId[folder.mediaId] ?? folder)
+            .toList(growable: false),
+      );
+    } catch (error) {
+      // The mutation already succeeded; a count refresh must not prompt a retry.
+      state = state.copyWith(errorMessage: '操作已完成，但收藏夹信息刷新失败：$error');
     }
   }
 

@@ -9,6 +9,7 @@ import 'package:window_manager/window_manager.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
 import 'core/platform/windows_hotkeys.dart';
+import 'core/platform/windows_tray_menu.dart';
 import 'shared/widgets/startup_reveal.dart';
 import 'state/providers.dart';
 
@@ -125,47 +126,28 @@ class _BiliTuneAppState extends ConsumerState<BiliTuneApp>
     await trayManager.setToolTip(
       track == null ? 'BiliTune' : '$title - ${track.artist}',
     );
-    await trayManager.setContextMenu(
-      Menu(
-        items: [
-          MenuItem(label: title, disabled: true),
-          MenuItem.separator(),
-          MenuItem(
-            key: 'previous',
-            label: '上一首',
-            onClick: (_) => ref.read(playbackProvider.notifier).previous(),
-          ),
-          MenuItem(
-            key: 'play_pause',
-            label: playback.isPlaying ? '暂停' : '播放',
-            onClick: (_) =>
-                unawaited(ref.read(playbackProvider.notifier).togglePlay()),
-          ),
-          MenuItem(
-            key: 'next',
-            label: '下一首',
-            onClick: (_) => ref.read(playbackProvider.notifier).next(),
-          ),
-          MenuItem.separator(),
-          MenuItem(
-            key: 'show',
-            label: '显示主窗口',
-            onClick: (_) => unawaited(_showWindow()),
-          ),
-          MenuItem(
-            key: 'hide',
-            label: '隐藏到托盘',
-            onClick: (_) => unawaited(windowManager.hide()),
-          ),
-          MenuItem.separator(),
-          MenuItem(
-            key: 'exit',
-            label: '退出',
-            onClick: (_) => unawaited(_exitApp()),
-          ),
-        ],
-      ),
-    );
+    await WindowsTrayMenu.update(title: title, isPlaying: playback.isPlaying);
+  }
+
+  Future<void> _showTrayMenu() async {
+    final action = await WindowsTrayMenu.show();
+    if (!mounted) return;
+    switch (action) {
+      case WindowsTrayAction.previous:
+        await _handleHotkeyAction(WindowsHotkeyAction.previousTrack);
+      case WindowsTrayAction.playPause:
+        await _handleHotkeyAction(WindowsHotkeyAction.playPause);
+      case WindowsTrayAction.next:
+        await _handleHotkeyAction(WindowsHotkeyAction.nextTrack);
+      case WindowsTrayAction.show:
+        await _showWindow();
+      case WindowsTrayAction.hide:
+        await windowManager.hide();
+      case WindowsTrayAction.exit:
+        await _exitApp();
+      case null:
+        break;
+    }
   }
 
   Future<void> _showWindow() async {
@@ -212,7 +194,7 @@ class _BiliTuneAppState extends ConsumerState<BiliTuneApp>
 
   @override
   void onTrayIconRightMouseDown() {
-    unawaited(trayManager.popUpContextMenu());
+    unawaited(_showTrayMenu());
   }
 }
 

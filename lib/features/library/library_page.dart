@@ -45,12 +45,16 @@ class LibraryPage extends ConsumerStatefulWidget {
 
 class _LibraryPageState extends ConsumerState<LibraryPage> {
   final _trackSearchController = TextEditingController();
+  final _playlistScrollController = ScrollController();
+  final _trackScrollController = ScrollController();
   Timer? _trackSearchDebounce;
 
   @override
   void dispose() {
     _trackSearchDebounce?.cancel();
     _trackSearchController.dispose();
+    _playlistScrollController.dispose();
+    _trackScrollController.dispose();
     super.dispose();
   }
 
@@ -71,7 +75,6 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
       ),
     );
     final playbackNotifier = ref.read(playbackProvider.notifier);
-    final libraryNotifier = ref.read(libraryProvider.notifier);
 
     final recentTracks = library.recentHistory;
     final playlists = <_PlaylistViewData>[
@@ -88,53 +91,80 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
       ),
       _PlaylistKind.folder => library.selectedFolderTracks,
     };
+    final canEditTracks =
+        selected.kind == _PlaylistKind.folder &&
+        !library.isLoading &&
+        !library.isUpdatingFavorites;
 
     final content = isDesktop
         ? Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               SizedBox(
                 width: 360,
-                child: _PlaylistList(
-                  playlists: playlists,
-                  selectedId: selected.id,
-                  isLoading: library.isLoading,
-                  canCreate: auth.isSignedIn,
-                  onCreate: auth.isSignedIn
-                      ? () => showCreateFavoriteFolderDialog(context)
-                      : () => context.go('/settings'),
-                  onSelect: _selectPlaylist,
-                  onHideFolder: (playlist) => _hidePlaylist(context, playlist),
+                child: ListView(
+                  key: const ValueKey('library-playlists-scroll'),
+                  controller: _playlistScrollController,
+                  primary: false,
+                  padding: const EdgeInsets.only(bottom: AppSpacing.s12),
+                  children: [
+                    _PlaylistList(
+                      playlists: playlists,
+                      selectedId: selected.id,
+                      isLoading: library.isLoading,
+                      canCreate: auth.isSignedIn,
+                      onCreate: auth.isSignedIn
+                          ? () => showCreateFavoriteFolderDialog(context)
+                          : () => context.go('/settings'),
+                      onSelect: _selectPlaylist,
+                      onHideFolder: (playlist) =>
+                          _hidePlaylist(context, playlist),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(width: AppSpacing.s6),
               Expanded(
-                child: _PlaylistDetail(
-                  playlist: selected,
-                  tracks: selectedTracks,
-                  trackKeyword: library.trackKeyword,
-                  isLoadingTracks:
-                      library.isLoading &&
-                      selected.kind == _PlaylistKind.folder,
-                  searchController: _trackSearchController,
-                  currentTrackId: playback.trackId,
-                  isCurrentTrackPlaying: playback.isPlaying,
-                  onSearchChanged: _scheduleTrackSearch,
-                  onPlayTrack: (track) =>
-                      playbackNotifier.playTrack(track, queue: selectedTracks),
-                  onPlayAll: selectedTracks.isEmpty
-                      ? null
-                      : () => playbackNotifier.playTrack(
-                          selectedTracks.first,
-                          queue: selectedTracks,
-                        ),
-                  onRemoveTrack: selected.kind == _PlaylistKind.folder
-                      ? (track) =>
-                            libraryNotifier.removeTrackFromFavoriteFolder(
+                child: ListView(
+                  key: const ValueKey('library-tracks-scroll'),
+                  controller: _trackScrollController,
+                  primary: false,
+                  padding: const EdgeInsets.only(bottom: AppSpacing.s12),
+                  children: [
+                    _PlaylistDetail(
+                      playlist: selected,
+                      tracks: selectedTracks,
+                      trackKeyword: library.trackKeyword,
+                      isLoadingTracks:
+                          (library.isLoading || library.isUpdatingFavorites) &&
+                          selected.kind == _PlaylistKind.folder,
+                      searchController: _trackSearchController,
+                      currentTrackId: playback.trackId,
+                      isCurrentTrackPlaying: playback.isPlaying,
+                      onSearchChanged: _scheduleTrackSearch,
+                      onPlayTrack: (track) => playbackNotifier.playTrack(
+                        track,
+                        queue: selectedTracks,
+                      ),
+                      onPlayAll: selectedTracks.isEmpty
+                          ? null
+                          : () => playbackNotifier.playTrack(
+                              selectedTracks.first,
+                              queue: selectedTracks,
+                            ),
+                      onRemoveTrack: canEditTracks
+                          ? (track) =>
+                                _removeFavoriteTrack(track, selected.mediaId!)
+                          : null,
+                      onTrackContextMenu: canEditTracks
+                          ? (track, position) => _showTrackMenu(
                               track,
                               selected.mediaId!,
+                              position,
                             )
-                      : null,
+                          : null,
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -158,7 +188,8 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                 tracks: selectedTracks,
                 trackKeyword: library.trackKeyword,
                 isLoadingTracks:
-                    library.isLoading && selected.kind == _PlaylistKind.folder,
+                    (library.isLoading || library.isUpdatingFavorites) &&
+                    selected.kind == _PlaylistKind.folder,
                 searchController: _trackSearchController,
                 currentTrackId: playback.trackId,
                 isCurrentTrackPlaying: playback.isPlaying,
@@ -171,55 +202,138 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                         selectedTracks.first,
                         queue: selectedTracks,
                       ),
-                onRemoveTrack: selected.kind == _PlaylistKind.folder
-                    ? (track) => libraryNotifier.removeTrackFromFavoriteFolder(
-                        track,
-                        selected.mediaId!,
-                      )
+                onRemoveTrack: canEditTracks
+                    ? (track) => _removeFavoriteTrack(track, selected.mediaId!)
+                    : null,
+                onTrackContextMenu: canEditTracks
+                    ? (track, position) =>
+                          _showTrackMenu(track, selected.mediaId!, position)
                     : null,
               ),
             ],
           );
 
-    return ListView(
-      padding: EdgeInsets.fromLTRB(pad, AppSpacing.s4, pad, AppSpacing.s12),
-      children: [
-        Row(
+    final header = <Widget>[
+      Row(
+        children: [
+          Expanded(
+            child: Text(
+              '我的歌单',
+              style: AppTypography.titleL.copyWith(color: colors.textPrimary),
+            ),
+          ),
+          BrandButton(
+            label: auth.isSignedIn ? '新建歌单' : '登录同步',
+            icon: auth.isSignedIn ? Icons.add_rounded : Icons.login_rounded,
+            variant: BiliButtonVariant.secondary,
+            onTap: auth.isSignedIn
+                ? () => showCreateFavoriteFolderDialog(context)
+                : () => context.go('/settings'),
+          ),
+        ],
+      ),
+      if (!auth.isSignedIn) ...[
+        const SizedBox(height: AppSpacing.s3),
+        Text(
+          '登录后可同步 B 站收藏夹；最近播放和我的下载可直接使用。',
+          style: AppTypography.caption.copyWith(color: colors.textSecondary),
+        ),
+      ],
+      const SizedBox(height: AppSpacing.s5),
+      if (library.errorMessage != null) ...[
+        Text(
+          library.errorMessage!,
+          style: AppTypography.caption.copyWith(color: colors.error),
+        ),
+        const SizedBox(height: AppSpacing.s4),
+      ],
+    ];
+
+    if (isDesktop) {
+      return Padding(
+        padding: EdgeInsets.fromLTRB(pad, AppSpacing.s4, pad, 0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Expanded(
-              child: Text(
-                '我的歌单',
-                style: AppTypography.titleL.copyWith(color: colors.textPrimary),
-              ),
-            ),
-            BrandButton(
-              label: auth.isSignedIn ? '新建歌单' : '登录同步',
-              icon: auth.isSignedIn ? Icons.add_rounded : Icons.login_rounded,
-              variant: BiliButtonVariant.secondary,
-              onTap: auth.isSignedIn
-                  ? () => showCreateFavoriteFolderDialog(context)
-                  : () => context.go('/settings'),
-            ),
+            ...header,
+            Expanded(child: content),
           ],
         ),
-        if (!auth.isSignedIn) ...[
-          const SizedBox(height: AppSpacing.s3),
-          Text(
-            '登录后可同步 B 站收藏夹；最近播放和我的下载可直接使用。',
-            style: AppTypography.caption.copyWith(color: colors.textSecondary),
+      );
+    }
+
+    return ListView(
+      padding: EdgeInsets.fromLTRB(pad, AppSpacing.s4, pad, AppSpacing.s12),
+      children: [...header, content],
+    );
+  }
+
+  Future<void> _showTrackMenu(Track track, int mediaId, Offset position) async {
+    final colors = context.colors;
+    final overlay =
+        Overlay.of(context).context.findRenderObject()! as RenderBox;
+    final localPosition = overlay.globalToLocal(position);
+    final action = await showMenu<_TrackMenuAction>(
+      context: context,
+      color: colors.bgElevated,
+      position: RelativeRect.fromSize(
+        Rect.fromLTWH(localPosition.dx, localPosition.dy, 0, 0),
+        overlay.size,
+      ),
+      items: [
+        PopupMenuItem(
+          value: _TrackMenuAction.move,
+          child: Row(
+            children: [
+              Icon(Icons.drive_file_move_outlined, color: colors.textSecondary),
+              const SizedBox(width: AppSpacing.s3),
+              const Text('移动到其他收藏夹'),
+            ],
           ),
-        ],
-        const SizedBox(height: AppSpacing.s5),
-        if (library.errorMessage != null) ...[
-          Text(
-            library.errorMessage!,
-            style: AppTypography.caption.copyWith(color: colors.error),
+        ),
+        PopupMenuItem(
+          value: _TrackMenuAction.remove,
+          child: Row(
+            children: [
+              Icon(Icons.delete_outline_rounded, color: colors.error),
+              const SizedBox(width: AppSpacing.s3),
+              Text('从当前收藏夹删除', style: TextStyle(color: colors.error)),
+            ],
           ),
-          const SizedBox(height: AppSpacing.s4),
-        ],
-        content,
+        ),
       ],
     );
+    if (!mounted) return;
+    switch (action) {
+      case _TrackMenuAction.move:
+        await showMoveToFavoriteDialog(context, track, fromMediaId: mediaId);
+      case _TrackMenuAction.remove:
+        await _removeFavoriteTrack(track, mediaId);
+      case null:
+        break;
+    }
+  }
+
+  Future<void> _removeFavoriteTrack(Track track, int mediaId) async {
+    try {
+      await ref
+          .read(libraryProvider.notifier)
+          .removeTrackFromFavoriteFolder(track, mediaId);
+      if (!mounted) return;
+      showAppToast(
+        context,
+        message: '已从当前收藏夹删除',
+        icon: Icons.delete_outline_rounded,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      showAppToast(
+        context,
+        message: '删除失败：$error',
+        icon: Icons.error_outline_rounded,
+        accentColor: context.colors.error,
+      );
+    }
   }
 
   List<Track> _filterTracks(List<Track> tracks, String query) {
@@ -551,6 +665,7 @@ class _PlaylistDetail extends StatelessWidget {
     required this.onPlayTrack,
     required this.onPlayAll,
     required this.onRemoveTrack,
+    required this.onTrackContextMenu,
   });
 
   final _PlaylistViewData playlist;
@@ -564,6 +679,7 @@ class _PlaylistDetail extends StatelessWidget {
   final void Function(Track track) onPlayTrack;
   final VoidCallback? onPlayAll;
   final void Function(Track track)? onRemoveTrack;
+  final void Function(Track track, Offset position)? onTrackContextMenu;
 
   @override
   Widget build(BuildContext context) {
@@ -692,11 +808,17 @@ class _PlaylistDetail extends StatelessWidget {
                   ? null
                   : () => onRemoveTrack!(tracks[i]),
               onTap: () => onPlayTrack(tracks[i]),
+              onSecondaryTapUp: onTrackContextMenu == null
+                  ? null
+                  : (details) =>
+                        onTrackContextMenu!(tracks[i], details.globalPosition),
             ),
       ],
     );
   }
 }
+
+enum _TrackMenuAction { move, remove }
 
 enum _PlaylistKind { recent, downloads, folder }
 

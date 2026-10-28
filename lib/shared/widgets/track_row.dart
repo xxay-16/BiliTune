@@ -20,6 +20,7 @@ class TrackRow extends StatefulWidget {
     this.liked = false,
     this.onTap,
     this.onLike,
+    this.onSecondaryTapUp,
   });
 
   final int index;
@@ -29,6 +30,7 @@ class TrackRow extends StatefulWidget {
   final bool liked;
   final VoidCallback? onTap;
   final VoidCallback? onLike;
+  final GestureTapUpCallback? onSecondaryTapUp;
 
   @override
   State<TrackRow> createState() => _TrackRowState();
@@ -47,7 +49,9 @@ class _TrackRowState extends State<TrackRow> {
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
       child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
         onTap: widget.onTap,
+        onSecondaryTapUp: widget.onSecondaryTapUp,
         child: AnimatedContainer(
           duration: AppDuration.fast,
           padding: const EdgeInsets.symmetric(
