@@ -48,6 +48,13 @@ jobs:
           if ($source -notmatch 'const Version = "([^"]+)"') { throw 'Version missing.' }
           $version = $Matches[1]
           if ($env:REF_TYPE -eq 'tag' -and $env:REF_NAME -ne "v$version") { throw 'Tag must match app version.' }
+          $frontend = Get-Content frontend/package.json -Raw | ConvertFrom-Json
+          $lock = Get-Content frontend/package-lock.json -Raw | ConvertFrom-Json -AsHashtable
+          $resources = Get-Content packaging/windows/info.json -Raw | ConvertFrom-Json
+          if ($frontend.version -ne $version -or $lock.version -ne $version -or
+              $lock.packages[''].version -ne $version -or $resources.info.'0409'.ProductVersion -ne $version) {
+            throw 'Go, frontend, lockfile and Windows resources must use the same app version.'
+          }
           "version=$version" >> $env:GITHUB_OUTPUT
           "artifact_version=$version-$($env:GITHUB_SHA.Substring(0,7))" >> $env:GITHUB_OUTPUT
       - name: Install locked dependencies
@@ -56,11 +63,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Go dependencies failed.' }
           npm --prefix frontend ci
           if ($LASTEXITCODE -ne 0) { throw 'Frontend dependencies failed.' }
-      - name: Check Go formatting
+      - name: Check Go and frontend formatting
         run: |
           $files = gofmt -l main.go development.go production.go internal
+          if ($LASTEXITCODE -ne 0) { throw 'Go formatting check failed.' }
           if ($files) { throw "Run gofmt on: $files" }
-      - name: Test backend and frontend
+          npm --prefix frontend run format:check
+          if ($LASTEXITCODE -ne 0) { throw 'Frontend formatting check failed.' }
+      - name: Test backend, uploader albums and frontend
         run: |
           go test ./internal/...
           if ($LASTEXITCODE -ne 0) { throw 'Backend tests failed.' }
@@ -72,7 +82,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: .cache
-          key: wails3-0.0-windows-amd64-go1.27.3-mpv652a1dd-v1
+          key: windows-go1.27.3-wails3.0.0-mpv652a1dd-${{ hashFiles('go.sum', 'scripts/build-windows.ps1', 'scripts/fetch-mpv.ps1') }}
       - name: Build Windows desktop
         run: ./scripts/build-windows.ps1 -SkipFrontend
       - name: Exercise real audio runtime
@@ -90,6 +100,11 @@ jobs:
         env:
           PACKAGE_VERSION: ${{ steps.version.outputs.artifact_version }}
         run: ./scripts/package-windows.ps1 -Version "$env:PACKAGE_VERSION"
+      - name: Verify package contents, checksums and Git revision
+        id: verification
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.artifact_version }}
+        run: ./scripts/verify-windows-package.ps1 -Version "$env:PACKAGE_VERSION" -ExpectedCommit "$env:GITHUB_SHA"
       - name: Upload installer
         id: installer
         uses: actions/upload-artifact@v7
@@ -107,6 +122,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
       - name: Upload checksums
+        id: checksums
         uses: actions/upload-artifact@v7
         with:
           path: dist/windows/SHA256SUMS.txt
@@ -118,10 +134,31 @@ jobs:
           PACKAGE_VERSION: ${{ steps.version.outputs.artifact_version }}
           INSTALLER_URL: ${{ steps.installer.outputs.artifact-url }}
           PORTABLE_URL: ${{ steps.portable.outputs.artifact-url }}
+          CHECKSUMS_URL: ${{ steps.checksums.outputs.artifact-url }}
+          PORTABLE_BYTES: ${{ steps.verification.outputs.portable_bytes }}
+          ARCHIVE_ENTRIES: ${{ steps.verification.outputs.entry_count }}
         run: |
-          "### BiliTune Desktop $env:PACKAGE_VERSION" >> $env:GITHUB_STEP_SUMMARY
-          "Go + Wails 3.0.0 / Windows x64." >> $env:GITHUB_STEP_SUMMARY
-          "[安装版 EXE]($env:INSTALLER_URL) · [免安装 ZIP]($env:PORTABLE_URL)" >> $env:GITHUB_STEP_SUMMARY
+          $portableMiB = [Math]::Round([double]$env:PORTABLE_BYTES / 1MB, 2)
+          @"
+          ### BiliTune Desktop $env:PACKAGE_VERSION
+
+          Go + Wails 3.0.0 / Windows x64
+
+          - [下载免安装 ZIP]($env:PORTABLE_URL)
+          - [下载安装版 EXE]($env:INSTALLER_URL)
+          - [下载 SHA-256 校验文件]($env:CHECKSUMS_URL)
+
+          | 检查 | 结果 |
+          | --- | --- |
+          | 代码提交 | $env:GITHUB_SHA |
+          | 免安装包大小 | $portableMiB MiB |
+          | ZIP 内文件 / 目录数 | $env:ARCHIVE_ENTRIES |
+          | 程序 / 音频 DLL 与构建文件比对 | 已通过 |
+          | 安装包与 ZIP 校验值 | 已通过 |
+
+          完整解压 ZIP 后运行文件夹中的 bilitune.exe，并保留 libmpv-2.dll。
+          试用新版前先从托盘退出旧版。产物保留 30 天。
+          "@ >> $env:GITHUB_STEP_SUMMARY
 
   release:
     if: startsWith(github.ref, 'refs/tags/')
