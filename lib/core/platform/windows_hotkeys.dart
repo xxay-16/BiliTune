@@ -34,7 +34,7 @@ extension WindowsHotkeyActionLabel on WindowsHotkeyAction {
 
   String get description => switch (this) {
     WindowsHotkeyAction.playPause => '全局控制当前曲目的播放状态',
-    WindowsHotkeyAction.previousTrack => '回到上一首或当前曲目开头',
+    WindowsHotkeyAction.previousTrack => '立即播放队列中的上一首',
     WindowsHotkeyAction.nextTrack => '播放队列中的下一首',
     WindowsHotkeyAction.toggleWindow => '显示前台窗口，或隐藏到托盘',
     WindowsHotkeyAction.stop => '停止当前曲目并回到开头',

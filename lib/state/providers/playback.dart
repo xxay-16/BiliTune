@@ -560,10 +560,6 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
       unawaited(playTrack(queue.first, queue: queue));
       return;
     }
-    if (state.position > const Duration(seconds: 3)) {
-      unawaited(seek(Duration.zero));
-      return;
-    }
     final previousIndex = (currentIndex - 1 + queue.length) % queue.length;
     unawaited(playTrack(queue[previousIndex], queue: queue));
   }
