@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Compass,
   Search,
   Download as DownloadIcon,
   Settings,
-  Music2,
   Plus,
   RefreshCw,
   LogIn,
@@ -28,9 +26,12 @@ import {
   Check,
   AlertCircle,
   ChevronRight,
-  MoreHorizontal,
+  Home,
+  ChartNoAxesColumnIncreasing,
+  ChevronLeft,
+  ChevronsUpDown,
 } from "lucide-react";
-import { api, bytes, filterTracks } from "./api";
+import { api, bytes, filterTracks, coverURL } from "./api";
 import {
   ContextMenu,
   Cover,
@@ -48,6 +49,8 @@ import {
 import { CreateFolderDialog, FolderPicker, LoginDialog } from "./dialogs";
 import { SettingsPage } from "./Settings";
 import { Immersive } from "./Immersive";
+import { DiscoverPage } from "./Discover";
+import { usePageNavigation } from "./navigation";
 import type {
   Account,
   Bootstrap,
@@ -58,17 +61,30 @@ import type {
   Track,
 } from "./types";
 
-type Page = "discover" | "search" | "library" | "downloads" | "settings";
 type Selection =
   | { kind: "folder"; id: number }
   | { kind: "recent" | "downloads" };
-type Menu = { track: Track; x: number; y: number; from?: number };
+type Menu = {
+  track: Track;
+  x: number;
+  y: number;
+  from?: number;
+  queue?: Track[];
+};
 
 export function App() {
   const [boot, setBoot] = useState<Bootstrap | null>(null),
     [fatal, setFatal] = useState("");
-  const [page, setPage] = useState<Page>("library"),
-    [collapsed, setCollapsed] = useState(false),
+  const {
+    page,
+    navigate: setPage,
+    back,
+    forward,
+    canBack,
+    canForward,
+  } = usePageNavigation();
+  const [chartTitle, setChartTitle] = useState("");
+  const [collapsed, setCollapsed] = useState(false),
     [folders, setFolders] = useState<Folder[]>([]),
     [selection, setSelection] = useState<Selection>({ kind: "recent" });
   const [tracks, setTracks] = useState<Track[]>([]),
@@ -237,7 +253,7 @@ export function App() {
     return () => controller.abort();
   }, [page, selection, reload]);
   useEffect(() => {
-    if (page !== "discover" || shelves.length) return;
+    if ((page !== "discover" && page !== "charts") || shelves.length) return;
     const controller = new AbortController();
     setDiscoverError("");
     api<Shelf[]>("discover", undefined, controller.signal)
@@ -432,40 +448,36 @@ export function App() {
   return (
     <div className={"app " + (collapsed ? "sidebar-collapsed" : "")}>
       <header className="titlebar">
-        <div className="titlebar-drag">
-          <img src="/logo.png" alt="" />
-          <span>BiliTune</span>
+        <div className="page-history">
+          <IconButton title="后退" disabled={!canBack} onClick={back}>
+            <ChevronLeft size={22} />
+          </IconButton>
+          <IconButton title="前进" disabled={!canForward} onClick={forward}>
+            <ChevronRight size={22} />
+          </IconButton>
         </div>
-        <button className="account-button" onClick={() => setLogin(true)}>
-          {boot.account ? (
-            <>
-              <span className="avatar">{boot.account.name.slice(0, 1)}</span>
-              <span>{boot.account.name}</span>
-            </>
-          ) : (
-            <>
-              <LogIn size={16} />
-              登录 Bilibili
-            </>
-          )}
-        </button>
+        <div className="titlebar-drag" title="拖动窗口" />
         <IconButton
           title="切换主题"
           onClick={async () => {
-            await api("settings", {
-              ...boot.settings,
-              theme:
-                document.documentElement.dataset.theme === "dark"
-                  ? "light"
-                  : "dark",
-            });
-            void refresh();
+            try {
+              await api("settings", {
+                ...boot.settings,
+                theme:
+                  document.documentElement.dataset.theme === "dark"
+                    ? "light"
+                    : "dark",
+              });
+              await refresh();
+            } catch (err) {
+              notify((err as Error).message, true);
+            }
           }}
         >
-          {boot.settings.theme === "light" ? (
-            <Moon size={18} />
-          ) : (
+          {document.documentElement.dataset.theme === "dark" ? (
             <Sun size={18} />
+          ) : (
+            <Moon size={18} />
           )}
         </IconButton>
         <div className="window-controls">
@@ -481,7 +493,7 @@ export function App() {
             aria-label="最大化或还原"
             onClick={() => windowAction("maximize")}
           >
-            <Square size={13} />
+            <Square size={14} />
           </button>
           <button
             className="window-close"
@@ -489,74 +501,116 @@ export function App() {
             aria-label="关闭窗口"
             onClick={() => windowAction("close")}
           >
-            <X size={18} />
+            <X size={20} />
           </button>
         </div>
       </header>
       <aside className="sidebar">
-        <div className="sidebar-brand">
-          <Music2 size={26} />
-          {!collapsed && <strong>BiliTune</strong>}
-          <IconButton
-            title={collapsed ? "展开侧栏" : "收起侧栏"}
-            onClick={() => setCollapsed(!collapsed)}
-          >
-            {collapsed ? (
-              <PanelLeftOpen size={17} />
-            ) : (
-              <PanelLeftClose size={17} />
-            )}
-          </IconButton>
-        </div>
-        <nav>
-          {(
-            [
-              ["discover", "发现音乐", Compass],
-              ["search", "搜索", Search],
-              ["downloads", "下载", DownloadIcon],
-              ["settings", "设置", Settings],
-            ] as const
-          ).map(([id, label, Icon]) => (
-            <button
-              key={id}
-              className={page === id ? "selected" : ""}
-              title={label}
-              onClick={() => setPage(id)}
+        <div className="sidebar-search-row">
+          {collapsed ? (
+            <IconButton title="搜索音乐" onClick={() => setPage("search")}>
+              <Search size={21} />
+            </IconButton>
+          ) : (
+            <form
+              className="sidebar-search"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void searchFor(search);
+              }}
             >
-              <Icon size={21} />
-              {!collapsed && <span>{label}</span>}
-            </button>
-          ))}
+              <Search size={16} />
+              <input
+                aria-label="搜索歌曲、歌手"
+                placeholder="搜索歌曲、歌手、BV 号"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                onFocus={() => setPage("search")}
+              />
+            </form>
+          )}
+        </div>
+        <nav aria-label="音乐导航">
+          <button
+            className={page === "discover" ? "selected" : ""}
+            title="为你推荐"
+            onClick={() => setPage("discover")}
+          >
+            <Home size={20} />
+            {!collapsed && <span>为你推荐</span>}
+          </button>
+          <button
+            className={page === "charts" ? "selected" : ""}
+            title="音乐排行榜"
+            onClick={() => setPage("charts")}
+          >
+            <ChartNoAxesColumnIncreasing size={20} />
+            {!collapsed && <span>音乐排行榜</span>}
+          </button>
+          <button
+            className={
+              page === "library" && selection.kind !== "recent"
+                ? "selected"
+                : ""
+            }
+            title="我的音乐"
+            onClick={() => {
+              if (selection.kind === "recent" && folders.length)
+                selectFolder({ kind: "folder", id: folders[0].id });
+              else setPage("library");
+            }}
+          >
+            <ListMusic size={20} />
+            {!collapsed && <span>我的音乐</span>}
+          </button>
+          <button
+            className={
+              page === "library" && selection.kind === "recent"
+                ? "selected"
+                : ""
+            }
+            title="最近播放"
+            onClick={() => selectFolder({ kind: "recent" })}
+          >
+            <Clock3 size={20} />
+            {!collapsed && <span>最近播放</span>}
+          </button>
+          <button
+            className={page === "downloads" ? "selected" : ""}
+            title="下载管理"
+            onClick={() => setPage("downloads")}
+          >
+            <DownloadIcon size={20} />
+            {!collapsed && <span>下载管理</span>}
+          </button>
+          <button
+            className={page === "search" ? "selected" : ""}
+            title="搜索结果"
+            onClick={() => setPage("search")}
+          >
+            <Search size={20} />
+            {!collapsed && <span>搜索结果</span>}
+          </button>
         </nav>
-        <div className="sidebar-divider" />
         <div className="sidebar-label">
-          {!collapsed && <span>我的歌单</span>}
+          {!collapsed && (
+            <button onClick={() => setPage("library")}>我的歌单</button>
+          )}
           <IconButton title="我的歌单" onClick={() => setPage("library")}>
-            <ListMusic size={17} />
+            <ListMusic size={15} />
           </IconButton>
           {!collapsed && (
             <IconButton
               title="新建歌单"
               onClick={() => (boot.account ? setCreate(true) : setLogin(true))}
             >
-              <Plus size={17} />
+              <Plus size={16} />
             </IconButton>
           )}
         </div>
         <div className="sidebar-folders">
           {!collapsed && (
             <>
-              <button
-                className={
-                  page === "library" && selection.kind === "recent"
-                    ? "selected"
-                    : ""
-                }
-                onClick={() => selectFolder({ kind: "recent" })}
-              >
-                <Clock3 size={19} />
-                <span>最近播放</span>
-              </button>
               {folders.map((folder) => (
                 <button
                   key={folder.id}
@@ -570,12 +624,16 @@ export function App() {
                   onClick={() =>
                     selectFolder({ kind: "folder", id: folder.id })
                   }
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                    setFolderMenu({ folder, x: e.clientX, y: e.clientY });
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    setFolderMenu({
+                      folder,
+                      x: event.clientX,
+                      y: event.clientY,
+                    });
                   }}
                 >
-                  <Cover folder={folder} size={36} />
+                  <Cover folder={folder} size={29} />
                   <span>
                     <strong>{folder.title}</strong>
                     <small>{folder.count} 首</small>
@@ -591,16 +649,84 @@ export function App() {
                   <span>登录同步收藏夹</span>
                 </button>
               )}
+              {!!boot.account && !folders.length && (
+                <p className="sidebar-no-folders">
+                  收藏你喜欢的音乐， 让好旋律留在身边。
+                </p>
+              )}
             </>
           )}
         </div>
+        <div className="sidebar-tools">
+          <button
+            className="local-button"
+            title="打开本地音频"
+            onClick={localFiles}
+          >
+            <FileAudio size={18} />
+            {!collapsed && <span>本地音乐</span>}
+          </button>
+          <IconButton
+            title="设置"
+            active={page === "settings"}
+            onClick={() => setPage("settings")}
+          >
+            <Settings size={18} />
+          </IconButton>
+          <IconButton
+            title={collapsed ? "展开侧栏" : "收起侧栏"}
+            onClick={() => setCollapsed(!collapsed)}
+          >
+            {collapsed ? (
+              <PanelLeftOpen size={17} />
+            ) : (
+              <PanelLeftClose size={17} />
+            )}
+          </IconButton>
+        </div>
+        {boot.player.track && !collapsed && (
+          <button
+            className="sidebar-now-playing"
+            onClick={() => setImmersive(true)}
+            title="打开正在播放"
+          >
+            <Cover track={boot.player.track} size={45} />
+            <span>
+              <strong>{boot.player.track.title}</strong>
+              <small>{boot.player.track.artist}</small>
+            </span>
+            {boot.player.playing && (
+              <span className="playing-indicator">
+                <i />
+                <i />
+                <i />
+              </span>
+            )}
+          </button>
+        )}
         <button
-          className="local-button"
-          title="打开本地音频"
-          onClick={localFiles}
+          className="sidebar-account"
+          onClick={() => (boot.account ? setPage("settings") : setLogin(true))}
+          title={boot.account?.name || "登录 Bilibili"}
         >
-          <FileAudio size={18} />
-          {!collapsed && "打开本地音频"}
+          <span className="avatar">
+            {boot.account?.avatar ? (
+              <img
+                src={coverURL(boot.account.avatar)}
+                alt=""
+                onError={(event) => {
+                  event.currentTarget.style.display = "none";
+                }}
+              />
+            ) : null}
+            {boot.account?.name.slice(0, 1) || <img src="/logo.png" alt="" />}
+          </span>
+          {!collapsed && (
+            <>
+              <strong>{boot.account?.name || "登录 Bilibili"}</strong>
+              <ChevronsUpDown size={15} />
+            </>
+          )}
         </button>
       </aside>
       <main className="main-content">
@@ -746,82 +872,29 @@ export function App() {
             </div>
           </div>
         )}
-        {page === "discover" && (
-          <div className="page discover-page">
-            <header className="page-heading">
-              <div>
-                <span className="eyebrow">听见新的喜欢</span>
-                <h1>发现音乐</h1>
-              </div>
-              <IconButton
-                title="刷新推荐"
-                onClick={() => {
-                  setShelves([]);
-                  setReload((v) => v + 1);
-                }}
-              >
-                <RefreshCw size={20} />
-              </IconButton>
-            </header>
-            <div className="page-scroll">
-              <div className="discover-banner">
-                <span className="eyebrow">BILITUNE · MUSIC FOR YOUR DAY</span>
-                <h2>好音乐，总会相遇。</h2>
-                <p>来自哔哩哔哩的音乐与灵感</p>
-                <button
-                  className="button primary"
-                  onClick={() => setPage("search")}
-                >
-                  <Search size={17} />
-                  寻找喜欢的音乐
-                </button>
-                <Music2 className="banner-note" size={180} />
-              </div>
-              {discoverError ? (
-                <Empty title="推荐暂时不可用" detail={discoverError}>
-                  <button
-                    className="button outline"
-                    onClick={() => setReload((v) => v + 1)}
-                  >
-                    重试
-                  </button>
-                </Empty>
-              ) : !shelves.length ? (
-                <Spinner />
-              ) : (
-                shelves.map((shelf) => (
-                  <section className="shelf" key={shelf.title}>
-                    <h2>
-                      {shelf.title}
-                      <span>{shelf.tracks.length} 首精选</span>
-                    </h2>
-                    <div className="music-grid">
-                      {shelf.tracks.map((track) => (
-                        <button
-                          className="music-card"
-                          key={track.id}
-                          onClick={() => play(track, shelf.tracks)}
-                          onContextMenu={(e) => {
-                            e.preventDefault();
-                            setMenu({ track, x: e.clientX, y: e.clientY });
-                          }}
-                        >
-                          <div className="card-cover">
-                            <Cover track={track} size={160} />
-                            <span className="card-play">
-                              <Play size={24} fill="currentColor" />
-                            </span>
-                          </div>
-                          <strong title={track.title}>{track.title}</strong>
-                          <small>{track.artist}</small>
-                        </button>
-                      ))}
-                    </div>
-                  </section>
-                ))
-              )}
-            </div>
-          </div>
+        {(page === "discover" || page === "charts") && (
+          <DiscoverPage
+            mode={page}
+            name={boot.account?.name}
+            shelves={shelves}
+            error={discoverError}
+            history={boot.history}
+            player={boot.player}
+            chartTitle={chartTitle}
+            onChartTitle={setChartTitle}
+            onCharts={(title) => {
+              setChartTitle(title || "");
+              setPage("charts");
+            }}
+            onSearch={() => setPage("search")}
+            onRefresh={() => {
+              setShelves([]);
+              setReload((value) => value + 1);
+            }}
+            onPlay={play}
+            onLike={(track) => chooseFavorite(track)}
+            onContext={(track, x, y, queue) => setMenu({ track, x, y, queue })}
+          />
         )}
         {page === "search" && (
           <div className="page search-page">
@@ -1201,11 +1274,12 @@ export function App() {
             onClick={() => {
               play(
                 menu.track,
-                page === "search"
-                  ? searchTracks
-                  : tracks.length
-                    ? tracks
-                    : [menu.track],
+                menu.queue ??
+                  (page === "search"
+                    ? searchTracks
+                    : tracks.length
+                      ? tracks
+                      : [menu.track]),
               );
               setMenu(null);
             }}

@@ -118,7 +118,11 @@ func main() {
 			})
 		},
 	})
-	mainWindow = desktop.Window.NewWithOptions(application.WebviewWindowOptions{Name: "main", Title: "BiliTune", Width: 1380, Height: 900, MinWidth: 1060, MinHeight: 690, Frameless: true, Hidden: *hidden, BackgroundColour: application.NewRGB(12, 12, 15), URL: "/", DefaultContextMenuDisabled: true})
+	windowBackground := application.NewRGB(255, 255, 255)
+	if state.Settings.Theme == "dark" {
+		windowBackground = application.NewRGB(23, 23, 24)
+	}
+	mainWindow = desktop.Window.NewWithOptions(application.WebviewWindowOptions{Name: "main", Title: "BiliTune", Width: 1380, Height: 900, MinWidth: 1060, MinHeight: 690, Frameless: true, Hidden: *hidden, BackgroundColour: windowBackground, URL: "/", DefaultContextMenuDisabled: true})
 	popup = desktop.Window.NewWithOptions(application.WebviewWindowOptions{Name: "tray-menu", Title: "BiliTune 托盘", Width: 180, Height: 302, MinWidth: 180, MaxWidth: 180, MinHeight: 302, MaxHeight: 302, Frameless: true, AlwaysOnTop: true, DisableResize: true, Hidden: true, BackgroundColour: application.NewRGB(23, 23, 28), URL: "/#tray", DefaultContextMenuDisabled: true, Windows: application.WindowsWindow{HiddenOnTaskbar: true}})
 	tray = desktop.SystemTray.New()
 	tray.SetIcon(icon)

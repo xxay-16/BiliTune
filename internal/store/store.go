@@ -34,6 +34,7 @@ func Open(dir string) (*Store, model.State, error) {
 	}
 	s := &Store{Dir: dir}
 	state := model.State{Settings: model.DefaultSettings(), Player: model.Player{Volume: .7, Repeat: "off"}, History: []model.Track{}, Downloads: []model.Download{}, Queue: []model.Track{}, SearchHistory: []string{}, HiddenFolders: []int64{}}
+	needsSave := false
 	data, err := os.ReadFile(filepath.Join(dir, "state.json"))
 	if err == nil {
 		if err := json.Unmarshal(data, &state); err != nil {
@@ -46,9 +47,12 @@ func Open(dir string) (*Store, model.State, error) {
 		if err := s.importLegacy(legacy, &state); err != nil {
 			return nil, state, err
 		}
-		if err := s.Save(state); err != nil {
-			return nil, state, err
-		}
+		needsSave = true
+	}
+	if state.AppearanceVersion < 1 {
+		state.Settings.Theme = "light"
+		state.AppearanceVersion = 1
+		needsSave = true
 	}
 	for i := range state.Downloads {
 		if state.Downloads[i].Status == "downloading" || state.Downloads[i].Status == "queued" {
@@ -64,6 +68,11 @@ func Open(dir string) (*Store, model.State, error) {
 	}
 	if state.Settings.Hotkeys == nil {
 		state.Settings.Hotkeys = []model.Hotkey{}
+	}
+	if needsSave {
+		if err := s.Save(state); err != nil {
+			return nil, state, err
+		}
 	}
 	return s, state, nil
 }

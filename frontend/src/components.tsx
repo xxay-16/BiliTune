@@ -4,6 +4,7 @@ import {
   useRef,
   useState,
   type ReactNode,
+  type CSSProperties,
 } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -49,6 +50,7 @@ export function IconButton({
 }) {
   return (
     <button
+      type="button"
       className={`icon-button ${active ? "active" : ""} ${className}`}
       title={title}
       aria-label={title}
@@ -497,7 +499,16 @@ export function PlayerBar({
     }
   };
   return (
-    <footer className="player-bar">
+    <footer
+      className="player-bar"
+      style={
+        {
+          "--player-art": player.track?.coverUrl
+            ? `url("${coverURL(player.track.coverUrl)}")`
+            : "none",
+        } as CSSProperties
+      }
+    >
       <button
         className="now-playing"
         onClick={onImmersive}
@@ -584,6 +595,11 @@ export function PlayerBar({
                 ? position
                 : Math.min(player.position, Math.max(player.duration, 1))
             }
+            style={
+              {
+                "--progress": `${player.duration > 0 ? Math.min(100, Math.max(0, ((seeking ? position : player.position) / player.duration) * 100)) : 0}%`,
+              } as CSSProperties
+            }
             onChange={(e) => {
               setSeeking(true);
               setPosition(Number(e.target.value));
@@ -618,6 +634,7 @@ export function PlayerBar({
           max={1}
           step={0.01}
           value={volume}
+          style={{ "--progress": `${volume * 100}%` } as CSSProperties}
           onPointerDown={() => setVolumeDrag(true)}
           onChange={(e) => setVolume(Number(e.target.value))}
           onPointerUp={() => {

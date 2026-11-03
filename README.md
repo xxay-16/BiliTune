@@ -10,6 +10,14 @@
 
 Go 负责 Bilibili 接口、播放与下载调度、本地数据和 Windows 系统集成；React + TypeScript 构建桌面界面，音频由 libmpv 播放。
 
+## 界面预览
+
+![BiliTune 浅色桌面界面](assest/desktop-home.png)
+
+预览图使用示例音乐和账号。实际歌单、封面和昵称来自 Bilibili 与你的登录账号。
+
+新版采用暖灰侧栏、浅色推荐首页、封面叠层横幅和底部播放栏；支持前进后退、侧栏搜索与深浅主题切换。
+
 ## 下载与安装
 
 在 [Windows Build](https://github.com/xxay-16/BiliTune/actions/workflows/windows-build.yml) 选择最近一次成功的构建，在页面底部的 **Artifacts** 下载产物。下载 Actions 产物需要登录 GitHub。
@@ -43,11 +51,13 @@ Go 负责 Bilibili 接口、播放与下载调度、本地数据和 Windows 系�
 - 音频下载、并发限制、暂停续传、播放下载内容、打开文件位置。
 - Windows 系统媒体键、自定义全局快捷键、冲突提示；上一曲始终直接切换。
 - 托盘后台播放，180 DIP 固定宽度菜单，长标题自动横向滚动。
-- 深浅主题、开机启动、关闭窗口行为、版本检查。
+- 默认浅色外观，保留深色主题；支持开机启动、关闭窗口行为和版本检查。
 
 ## 从 Flutter 版升级
 
 先从系统托盘退出旧版，再启动新版本，以免两个播放器同时响应媒体键。
+
+0.2.1 首次启动会切换到新版浅色外观；之后在设置里选择的主题会跨重启保留。
 
 首次启动会自动导入旧版登录信息、设置、播放位置、队列、历史、下载任务和隐藏收藏夹设置。仅在新数据目录还没有 `state.json` 时执行导入，旧文件保持原样。
 
@@ -113,7 +123,7 @@ cd BiliTune
 
 [Windows Build 工作流](.github/workflows/windows-build.yml) 会在推送 `main` / `master`、提交 Pull Request 或手动触发时执行测试、编译和 Windows 打包，产物保留 **30 天**。
 
-推送与 `internal/model/model.go` 中版本号一致的标签（例如 `v0.2.0`）时，工作流在构建成功后发布 GitHub Release，附带安装包、便携包和校验文件。日常分支推送的安装包从 Actions 下载。
+推送与 `internal/model/model.go` 中版本号一致的标签（例如 `v0.2.1`）时，工作流在构建成功后发布 GitHub Release，附带安装包、便携包和校验文件。日常分支推送的安装包从 Actions 下载。
 
 ## 开发与验证
 

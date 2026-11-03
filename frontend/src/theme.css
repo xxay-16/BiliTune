@@ -1,36 +1,51 @@
 :root {
-  font-family:
-    Inter, "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
-  color-scheme: dark;
-  --bg: #0c0c0f;
-  --sidebar: #08080a;
-  --surface: #17171c;
-  --surface2: #23232b;
-  --hover: #2d2c36;
-  --line: #ffffff0e;
-  --text: #f6f4f8;
-  --muted: #9a97aa;
-  --pink: #ff6b9c;
-  --pink-hover: #ff85ad;
-  --shadow: 0 16px 64px #0008;
+  font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  color-scheme: light;
+  --bg: #ffffff;
+  --sidebar: #f5f2ee;
+  --surface: #fbfaf8;
+  --surface2: #f0ede9;
+  --hover: #e9e5e0;
+  --line: #eae6e1;
+  --text: #1d1d1f;
+  --muted: #6d6661;
+  --pink: #ef354b;
+  --pink-hover: #dc253c;
+  --button-bg: #d92d44;
+  --button-hover: #c82037;
+  --button-text: #ffffff;
+  --shadow: 0 16px 64px #34251520;
   --radius: 12px;
+  --search-bg: #eeebe7;
+  --selection-bg: #e7e2dd;
+  --accent-soft: #fff0f0;
+  --range-track: #dcd8d4;
+  --collection-hero: linear-gradient(125deg, #f1e6e2, #f2eee7 70%, #eeede6);
   color: var(--text);
   background: var(--bg);
   font-size: 14px;
 }
-:root[data-theme="light"] {
-  color-scheme: light;
-  --bg: #f8f7fa;
-  --sidebar: #eeedf3;
-  --surface: #fff;
-  --surface2: #edebf3;
-  --hover: #e2dfeb;
-  --line: #22153714;
-  --text: #24202b;
-  --muted: #767082;
-  --pink: #d62c68;
-  --pink-hover: #c51e59;
-  --shadow: 0 16px 64px #29203920;
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #171718;
+  --sidebar: #202020;
+  --surface: #202022;
+  --surface2: #2d2c2d;
+  --hover: #373436;
+  --line: #ffffff0c;
+  --text: #f4f0ed;
+  --muted: #a39b96;
+  --pink: #ff6475;
+  --pink-hover: #ff8190;
+  --button-bg: #ff6475;
+  --button-hover: #ff8190;
+  --button-text: #23161a;
+  --shadow: 0 16px 64px #0006;
+  --search-bg: #2d2b2c;
+  --selection-bg: #363232;
+  --accent-soft: #3c292e;
+  --range-track: #4d4747;
+  --collection-hero: linear-gradient(125deg, #433035, #312d30 70%, #30352f);
 }
 * {
   box-sizing: border-box;

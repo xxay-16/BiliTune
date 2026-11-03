@@ -1,6 +1,6 @@
 package model
 
-const Version = "0.2.0"
+const Version = "0.2.1"
 
 type Track struct {
 	ID              string `json:"id"`
@@ -55,7 +55,7 @@ type Settings struct {
 }
 
 func DefaultSettings() Settings {
-	return Settings{Theme: "dark", CloseBehavior: "tray", AudioQuality: "auto", LyricsSource: "auto", PlaybackRate: 1, HistoryLimit: 100, DownloadConcurrency: 2, Hotkeys: []Hotkey{}}
+	return Settings{Theme: "light", CloseBehavior: "tray", AudioQuality: "auto", LyricsSource: "auto", PlaybackRate: 1, HistoryLimit: 100, DownloadConcurrency: 2, Hotkeys: []Hotkey{}}
 }
 
 type Player struct {
@@ -85,13 +85,14 @@ type Download struct {
 }
 
 type State struct {
-	Settings      Settings   `json:"settings"`
-	History       []Track    `json:"history"`
-	SearchHistory []string   `json:"searchHistory"`
-	HiddenFolders []int64    `json:"hiddenFolders"`
-	Downloads     []Download `json:"downloads"`
-	Player        Player     `json:"player"`
-	Queue         []Track    `json:"queue"`
+	AppearanceVersion int        `json:"appearanceVersion"`
+	Settings          Settings   `json:"settings"`
+	History           []Track    `json:"history"`
+	SearchHistory     []string   `json:"searchHistory"`
+	HiddenFolders     []int64    `json:"hiddenFolders"`
+	Downloads         []Download `json:"downloads"`
+	Player            Player     `json:"player"`
+	Queue             []Track    `json:"queue"`
 }
 
 type Bootstrap struct {

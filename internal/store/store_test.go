@@ -74,3 +74,29 @@ func TestSaveAtomicRoundtrip(t *testing.T) {
 		t.Fatal(files)
 	}
 }
+
+func TestAppearanceUpgradeKeepsLaterThemeChoice(t *testing.T) {
+	dir := t.TempDir()
+	settings := model.DefaultSettings()
+	settings.Theme = "dark"
+	original := map[string]any{"settings": settings, "history": []model.Track{{ID: "saved", Title: "保留的音乐"}}, "player": model.Player{Volume: .42, Position: 19}}
+	data, _ := json.Marshal(original)
+	if err := os.WriteFile(filepath.Join(dir, "state.json"), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	st, state, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.AppearanceVersion != 1 || state.Settings.Theme != "light" || len(state.History) != 1 || state.Player.Volume != .42 || state.Player.Position != 19 {
+		t.Fatalf("appearance migration changed data: %+v", state)
+	}
+	state.Settings.Theme = "dark"
+	if err = st.Save(state); err != nil {
+		t.Fatal(err)
+	}
+	_, again, err := Open(dir)
+	if err != nil || again.Settings.Theme != "dark" {
+		t.Fatal("explicit theme choice lost after restart", err)
+	}
+}
