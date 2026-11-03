@@ -19,6 +19,7 @@ var user32 = windows.NewLazySystemDLL("user32.dll")
 var registerHotkey = user32.NewProc("RegisterHotKey")
 var unregisterHotkey = user32.NewProc("UnregisterHotKey")
 var getCursor = user32.NewProc("GetCursorPos")
+var getPhysicalCursor = user32.NewProc("GetPhysicalCursorPos")
 var postMessage = user32.NewProc("PostMessageW")
 
 const mediaMessage = 0x8000 + 0x350
@@ -213,7 +214,9 @@ func VirtualKey(key string) uintptr {
 
 func Cursor() (int, int) {
 	var point struct{ X, Y int32 }
-	getCursor.Call(uintptr(unsafe.Pointer(&point)))
+	if ok, _, _ := getPhysicalCursor.Call(uintptr(unsafe.Pointer(&point))); ok == 0 {
+		getCursor.Call(uintptr(unsafe.Pointer(&point)))
+	}
 	return int(point.X), int(point.Y)
 }
 func Reveal(path string) error {

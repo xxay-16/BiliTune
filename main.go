@@ -20,6 +20,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/events"
 	core "github.com/xxay-16/BiliTune/internal/app"
 	"github.com/xxay-16/BiliTune/internal/bili"
+	layout "github.com/xxay-16/BiliTune/internal/desktop"
 	"github.com/xxay-16/BiliTune/internal/model"
 	"github.com/xxay-16/BiliTune/internal/native"
 	"github.com/xxay-16/BiliTune/internal/player"
@@ -123,14 +124,30 @@ func main() {
 		windowBackground = application.NewRGB(23, 23, 24)
 	}
 	mainWindow = desktop.Window.NewWithOptions(application.WebviewWindowOptions{Name: "main", Title: "BiliTune", Width: 1380, Height: 900, MinWidth: 1060, MinHeight: 690, Frameless: true, Hidden: *hidden, BackgroundColour: windowBackground, URL: "/", DefaultContextMenuDisabled: true})
-	popup = desktop.Window.NewWithOptions(application.WebviewWindowOptions{Name: "tray-menu", Title: "BiliTune 托盘", Width: 180, Height: 302, MinWidth: 180, MaxWidth: 180, MinHeight: 302, MaxHeight: 302, Frameless: true, AlwaysOnTop: true, DisableResize: true, Hidden: true, BackgroundColour: application.NewRGB(23, 23, 28), URL: "/#tray", DefaultContextMenuDisabled: true, Windows: application.WindowsWindow{HiddenOnTaskbar: true}})
+	popup = desktop.Window.NewWithOptions(application.WebviewWindowOptions{Name: "tray-menu", Title: "BiliTune 托盘", Width: layout.TrayWidth, Height: layout.TrayHeight, MinWidth: layout.TrayWidth, MaxWidth: layout.TrayWidth, MinHeight: layout.TrayHeight, MaxHeight: layout.TrayHeight, Frameless: true, AlwaysOnTop: true, DisableResize: true, Hidden: true, BackgroundColour: application.NewRGB(32, 32, 34), URL: "/#tray", DefaultContextMenuDisabled: true, Windows: application.WindowsWindow{HiddenOnTaskbar: true}})
 	tray = desktop.SystemTray.New()
 	tray.SetIcon(icon)
 	tray.SetTooltip("BiliTune")
 	tray.AttachWindow(popup)
-	tray.WindowOffset(6)
 	tray.OnClick(show)
-	tray.OnRightClick(func() { tray.ShowWindow(); popup.Focus() })
+	tray.OnRightClick(func() {
+		// Wails' default flyout placement falls back to the screen corner.
+		// Anchor to the physical cursor on its own monitor instead.
+		x, y := native.Cursor()
+		application.InvokeSync(func() {
+			screen := desktop.Screen.ScreenNearestPhysicalPoint(application.Point{X: x, Y: y})
+			if screen == nil {
+				return
+			}
+			work := screen.PhysicalWorkArea
+			if work.IsEmpty() {
+				work = screen.PhysicalBounds
+			}
+			bounds := layout.TrayBounds(layout.Point{X: x, Y: y}, layout.Rect{X: work.X, Y: work.Y, Width: work.Width, Height: work.Height}, float64(screen.ScaleFactor))
+			popup.SetPhysicalBounds(application.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: bounds.Height})
+			popup.Show().Focus()
+		})
+	})
 	popup.OnWindowEvent(events.Common.WindowLostFocus, func(*application.WindowEvent) { tray.HideWindow() })
 	closeMain := func() {
 		switch service.Bootstrap().Settings.CloseBehavior {

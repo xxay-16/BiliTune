@@ -10,6 +10,12 @@
 
 Go 负责 Bilibili 接口、播放与下载调度、本地数据和 Windows 系统集成；React + TypeScript 构建桌面界面，音频由 libmpv 播放。
 
+## 0.2.3 更新
+
+- 托盘右键菜单固定为 **100 DIP** 宽，系统缩放时按比例显示；长歌曲名保持自动横向滚动。
+- 菜单按右键点击位置弹出，支持隐藏图标面板，并根据鼠标所在显示器的可用区域避让边缘。
+- 修正副屏和不同显示缩放下的菜单位置偏移。
+
 ## 0.2.2 更新
 
 - 点击搜索结果、歌单、播放栏、推荐卡片或队列中的 UP 主名字，进入播放器内的 UP 主主页。
@@ -60,7 +66,7 @@ Go 负责 Bilibili 接口、播放与下载调度、本地数据和 Windows 系�
 - 站内歌词 / 字幕与 LRCLIB 歌词，沉浸播放界面。
 - 音频下载、并发限制、暂停续传、播放下载内容、打开文件位置。
 - Windows 系统媒体键、自定义全局快捷键、冲突提示；上一曲始终直接切换。
-- 托盘后台播放，180 DIP 固定宽度菜单，长标题自动横向滚动。
+- 托盘后台播放，100 DIP 固定宽度菜单，长标题自动横向滚动。
 - 默认浅色外观，保留深色主题；支持开机启动、关闭窗口行为和版本检查。
 
 ## UP 主与专辑
@@ -140,9 +146,9 @@ cd BiliTune
 打包后可检查压缩包内容与原始构建文件是否一致：
 
 ```powershell
-./scripts/verify-windows-package.ps1 -Version 0.2.2
+./scripts/verify-windows-package.ps1 -Version 0.2.3
 # 仅生成免安装包时，校验也加上同名开关：
-./scripts/verify-windows-package.ps1 -Version 0.2.2 -SkipInstaller
+./scripts/verify-windows-package.ps1 -Version 0.2.3 -SkipInstaller
 ```
 
 如果打包时指定了其他 `-Version` / `-OutputDir`，校验时使用相同的 `-Version`，并通过 `-PackageDir` 指向对应目录。
@@ -160,7 +166,7 @@ cd BiliTune
 
 上述检查通过后才上传产物。构建结果摘要优先提供免安装 ZIP 下载入口，同时列出安装包、校验文件、提交号、ZIP 大小和文件数量；无需把开发环境或自己的 Bilibili 登录信息上传到 GitHub。
 
-推送与 `internal/model/model.go` 中版本号一致的标签（例如 `v0.2.2`）时，工作流在构建成功后发布 GitHub Release，附带安装包、便携包和校验文件。日常分支推送的安装包从 Actions 下载。
+推送与 `internal/model/model.go` 中版本号一致的标签（例如 `v0.2.3`）时，工作流在构建成功后发布 GitHub Release，附带安装包、便携包和校验文件。日常分支推送的安装包从 Actions 下载。
 
 ## 开发与验证
 
