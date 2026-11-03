@@ -1,4 +1,5 @@
 import ReactDOM from "react-dom/client";
+import "@wailsio/runtime";
 import { App } from "./App";
 import { Tray } from "./Tray";
 import "./style.css";
