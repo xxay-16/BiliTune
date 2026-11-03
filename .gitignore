@@ -1,97 +1,48 @@
-# OS and editor noise
+# Workspace-local tools and test data
+/.codex/
+/.cache/
+/.claude/
+/.workbuddy/
+/example/
+
+# Build outputs
+/bin/
+/dist/
+/build/
+/coverage/
+*.syso
+*.test
+*.exe
+!packaging/windows/*.exe.manifest
+frontend/node_modules/
+frontend/dist/
+*.tsbuildinfo
+
+# Legacy local caches (the Flutter source is on backup/flutter-before-wails3)
+.dart_tool/
+.flutter-plugins*
+
+# Editors and OS files
+.vscode/
+.idea/
 .DS_Store
 Thumbs.db
 desktop.ini
-*.swp
-*.tmp
 *.log
+*.tmp
+*.swp
+__pycache__/
+.venv/
 
-# IDEs
-.idea/
-.vscode/*
-!.vscode/settings.json
-!.vscode/launch.json
-!.vscode/tasks.json
-!.vscode/extensions.json
-*.iml
-*.ipr
-*.iws
-
-# Local agent/workspace state
-/.claude/
-/.workbuddy/
-/.codex/
-
-# Reference projects kept locally only
-/example/
-
-# Flutter and Dart generated files
-.dart_tool/
-.flutter-plugins
-.flutter-plugins-dependencies
-.pub-cache/
-.pub/
-/build/
-**/build/
-/coverage/
-**/coverage/
-**/doc/api/
-**/ios/Flutter/.last_build_id
-
-# Flutter release symbol files
-app.*.symbols
-app.*.map.json
-
-# Local distribution output
-/dist/
-**/dist/
-
-# Android generated/local files
-android/.gradle/
-android/local.properties
-android/app/debug/
-android/app/profile/
-android/app/release/
-android/app/*.apk
-android/app/*.aab
-android/app/*.jks
-android/app/*.keystore
-**/key.properties
-**/local.properties
-
-# Signing keys and environment files
-*.jks
-*.keystore
-*.p12
-*.pem
-*.key
+# Private environment / signing files
 .env
 .env.*
-!.env.example
-**/.env
-**/.env.*
-!**/.env.example
-
-# Node / frontend reference-project leftovers
-node_modules/
-**/node_modules/
-**/.pnpm-store/
-**/.turbo/
-*.tsbuildinfo
-
-# Native package manager leftovers
-**/Pods/
-
-# Python leftovers
-__pycache__/
-**/__pycache__/
-.venv/
-venv/
-**/.venv/
-**/venv/
-**/*.egg-info/
-**/.pytest_cache/
-**/.mypy_cache/
-**/.ruff_cache/
+*.pem
+*.key
+*.p12
+*.jks
+*.keystore
 
 docs/下一阶段接手文档.md
+/android/
+/windows/

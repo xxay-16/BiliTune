@@ -1,0 +1,22 @@
+version: '3'
+info:
+  companyName: BiliTune contributors
+  productName: BiliTune
+  productIdentifier: com.wep56.bilitune
+  description: Bilibili desktop music player
+  version: 0.2.0
+dev_mode:
+  root_path: .
+  log_level: warn
+  debounce: 600
+  ignore:
+    dir: [.git, .codex, .cache, build, dist, bin, node_modules, frontend]
+    file: ['*_test.go']
+    watched_extension: ['*.go']
+    git_ignore: true
+  executes:
+    - cmd: powershell -NoProfile -File scripts/build-windows.ps1 -Dev
+      type: blocking
+    - cmd: ./bin/bilitune.exe
+      type: primary
+      exit_policy: shutdown

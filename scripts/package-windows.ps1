@@ -1,126 +1,65 @@
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)]
-    [ValidatePattern('^[0-9A-Za-z][0-9A-Za-z._+-]*$')]
-    [string]$Version,
+    [ValidatePattern('^[0-9A-Za-z][0-9A-Za-z._+-]*$')][string]$Version,
     [string]$SourceDir,
     [string]$OutputDir,
     [switch]$SkipInstaller
 )
-
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
-if (-not $SourceDir) {
-    $SourceDir = Join-Path $projectRoot 'build/windows/x64/runner/Release'
-}
-if (-not $OutputDir) {
-    $OutputDir = Join-Path $projectRoot 'dist/windows'
+if (-not $SourceDir) { $SourceDir = Join-Path $projectRoot 'bin' }
+if (-not $OutputDir) { $OutputDir = Join-Path $projectRoot 'dist/windows' }
+if (-not $Version) {
+    $source = Get-Content (Join-Path $projectRoot 'internal/model/model.go') -Raw
+    if ($source -notmatch 'const Version = "([^"]+)"') { throw 'Cannot read app version.' }
+    $Version = $Matches[1]
 }
 $SourceDir = (Resolve-Path -LiteralPath $SourceDir).Path
-$OutputDir = [System.IO.Path]::GetFullPath($OutputDir)
-$packageName = "BiliTune-$Version-windows-x64"
-$stageDir = Join-Path $OutputDir ".staging/$packageName"
-$zipPath = Join-Path $OutputDir "$packageName-portable.zip"
-$installerPath = Join-Path $OutputDir "BiliTune-Setup-$Version.exe"
+$OutputDir = [IO.Path]::GetFullPath($OutputDir)
+$name = "BiliTune-$Version-windows-x64"
+$stage = Join-Path $OutputDir ".staging/$name"
+$zip = Join-Path $OutputDir "$name-portable.zip"
+$installer = Join-Path $OutputDir "BiliTune-Setup-$Version.exe"
+foreach ($file in @('bilitune.exe', 'libmpv-2.dll')) {
+    if (-not (Test-Path -LiteralPath (Join-Path $SourceDir $file))) { throw "Missing $file. Run scripts/build-windows.ps1 first." }
+}
+foreach ($path in @($stage,$zip,$installer)) {
+    if (Test-Path -LiteralPath $path) { throw "Output already exists: $path. Use a fresh version or output directory." }
+}
+New-Item -ItemType Directory -Path $stage -Force | Out-Null
+Copy-Item -LiteralPath (Join-Path $SourceDir 'bilitune.exe'),(Join-Path $SourceDir 'libmpv-2.dll') -Destination $stage
+Copy-Item -LiteralPath (Join-Path $projectRoot 'THIRD_PARTY_NOTICES.md') -Destination $stage
+Copy-Item -LiteralPath (Join-Path $projectRoot 'licenses') -Destination $stage -Recurse
+@"
+BiliTune Desktop $Version (Windows x64)
+Go + Wails 3.0.0
 
-foreach ($file in @(
-    'bilitune.exe',
-    'flutter_windows.dll',
-    'libmpv-2.dll',
-    'WebView2Loader.dll',
-    'data/icudtl.dat',
-    'data/app.so',
-    'data/flutter_assets/AssetManifest.bin'
-)) {
-    if (-not (Test-Path -LiteralPath (Join-Path $SourceDir $file) -PathType Leaf)) {
-        throw "Missing Windows build output: $file"
-    }
-}
-foreach ($output in @($stageDir, $zipPath, $installerPath)) {
-    if (Test-Path -LiteralPath $output) {
-        throw "Package output already exists: $output. Use a fresh output directory."
-    }
-}
-
-# Bundle the redistributable x64 runtime from the installed C++ toolchain.
-$vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
-if (-not (Test-Path -LiteralPath $vswhere)) {
-    throw 'Visual Studio Installer/vswhere.exe was not found.'
-}
-$visualStudio = & $vswhere -latest -products '*' `
-    -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-if ($LASTEXITCODE -ne 0 -or -not $visualStudio) {
-    throw 'No Visual Studio C++ toolchain was found.'
-}
-$redistRoot = Join-Path $visualStudio 'VC/Redist/MSVC'
-$runtime = $null
-foreach ($toolset in (Get-ChildItem -LiteralPath $redistRoot -Directory |
-    Where-Object { $_.Name -match '^\d+\.\d+\.\d+(\.\d+)?$' } |
-    Sort-Object { [version]$_.Name } -Descending)) {
-    $runtime = Get-ChildItem -LiteralPath (Join-Path $toolset.FullName 'x64') `
-        -Directory -Filter 'Microsoft.VC*.CRT' -ErrorAction SilentlyContinue |
-        Select-Object -First 1
-    if ($runtime) { break }
-}
-if (-not $runtime) {
-    throw 'The x64 Visual C++ redistributable runtime was not found.'
-}
-
-$compiler = $null
+完整解压后运行 bilitune.exe，并保留同目录的 libmpv-2.dll。
+需要 Windows 10/11 与 Microsoft Edge WebView2 Runtime。
+请先从托盘退出旧版 BiliTune，以免两个播放器同时响应媒体键。
+首次启动会自动导入旧版登录、收藏夹显示设置、历史和下载记录。
+"@ | Set-Content -LiteralPath (Join-Path $stage 'README.txt') -Encoding utf8
 if (-not $SkipInstaller) {
-    $command = Get-Command ISCC.exe -ErrorAction SilentlyContinue
-    if ($command) { $compiler = $command.Source }
-    foreach ($programRoot in @(${env:ProgramFiles(x86)}, $env:ProgramFiles)) {
-        if ($compiler) { break }
-        foreach ($setupVersion in @('7', '6')) {
-            $candidate = Join-Path $programRoot "Inno Setup $setupVersion/ISCC.exe"
-            if (Test-Path -LiteralPath $candidate) {
-                $compiler = $candidate
-                break
-            }
+    $compiler = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source
+    foreach ($root in @(${env:ProgramFiles(x86)}, $env:ProgramFiles, $env:LOCALAPPDATA)) {
+        foreach ($relative in @('Inno Setup 7/ISCC.exe','Inno Setup 6/ISCC.exe','Programs/Inno Setup 7/ISCC.exe','Programs/Inno Setup 6/ISCC.exe')) {
+            $candidate=Join-Path $root $relative
+            if (-not $compiler -and (Test-Path -LiteralPath $candidate)) { $compiler=$candidate }
         }
     }
-    if (-not $compiler) {
-        throw 'Inno Setup compiler not found. Install Inno Setup or use -SkipInstaller.'
-    }
+    if (-not $compiler) { throw 'Install Inno Setup 6/7 or specify -SkipInstaller.' }
+    & $compiler (Join-Path $projectRoot 'packaging/windows/bilitune.iss') "/DAppVersion=$Version" "/DSourceDir=$stage" "/DOutputDir=$OutputDir"
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $installer)) { throw 'Installer compilation failed.' }
 }
-
-New-Item -ItemType Directory -Path $stageDir -Force | Out-Null
-Copy-Item -Path (Join-Path $SourceDir '*') -Destination $stageDir -Recurse
-Copy-Item -Path (Join-Path $runtime.FullName '*.dll') -Destination $stageDir
-@"
-BiliTune Windows x64 ($Version)
-
-完整解压后运行 bilitune.exe，请保留同目录中的 DLL 文件和 data 文件夹。
-启动前请先从系统托盘退出已运行的旧版 BiliTune。
-"@ | Set-Content -LiteralPath (Join-Path $stageDir 'README.txt') -Encoding utf8
-
-if (-not $SkipInstaller) {
-    & $compiler (Join-Path $projectRoot 'windows/installer/bilitune.iss') `
-        "/DAppVersion=$Version" "/DSourceDir=$stageDir" "/DOutputDir=$OutputDir"
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $installerPath)) {
-        throw 'Inno Setup did not produce the Windows installer.'
-    }
+Compress-Archive -LiteralPath $stage -DestinationPath $zip -CompressionLevel Optimal
+$archive=[IO.Compression.ZipFile]::OpenRead($zip)
+try { foreach($file in @('bilitune.exe','libmpv-2.dll')) { if (-not $archive.GetEntry("$name/$file")) { throw "Archive missing $file" } } } finally { $archive.Dispose() }
+$packages=@($zip)
+if (-not $SkipInstaller) { $packages+=$installer }
+foreach($file in $packages) {
+    $hash=(Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
+    "$hash  $([IO.Path]::GetFileName($file))" | Set-Content -LiteralPath "$file.sha256" -Encoding ascii
+    Write-Output $file
 }
-
-Compress-Archive -LiteralPath $stageDir -DestinationPath $zipPath -CompressionLevel Optimal
-$archive = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
-try {
-    if (-not $archive.GetEntry("$packageName/bilitune.exe")) {
-        throw 'Portable ZIP is missing bilitune.exe.'
-    }
-    if (-not $archive.GetEntry("$packageName/data/app.so")) {
-        throw 'Portable ZIP is missing the compiled application.'
-    }
-} finally {
-    $archive.Dispose()
-}
-
-$packages = @($zipPath)
-if (-not $SkipInstaller) { $packages += $installerPath }
-$checksums = foreach ($package in $packages) {
-    $hash = Get-FileHash -LiteralPath $package -Algorithm SHA256
-    "$($hash.Hash.ToLowerInvariant())  $([System.IO.Path]::GetFileName($package))"
-}
-$checksums | Set-Content -LiteralPath (Join-Path $OutputDir 'SHA256SUMS.txt') -Encoding utf8
-Get-Item -LiteralPath $packages | Select-Object FullName, Length
+$sumLines=foreach($file in $packages){"$((Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant())  $([IO.Path]::GetFileName($file))"}
+$sumLines | Set-Content -LiteralPath (Join-Path $OutputDir 'SHA256SUMS.txt') -Encoding ascii

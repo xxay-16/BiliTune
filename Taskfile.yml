@@ -1,0 +1,16 @@
+version: '3'
+tasks:
+  build:
+    platforms: [windows]
+    cmds: [powershell -NoProfile -File scripts/build-windows.ps1]
+  run:
+    platforms: [windows]
+    cmds: [./bin/bilitune.exe]
+  test:
+    cmds:
+      - go test ./internal/...
+      - npm --prefix frontend test
+  package:
+    platforms: [windows]
+    deps: [build]
+    cmds: [powershell -NoProfile -File scripts/package-windows.ps1]

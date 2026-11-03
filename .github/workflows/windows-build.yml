@@ -3,6 +3,8 @@ name: Windows Build
 on:
   push:
     branches: [main, master]
+    tags: ['v*.*.*']
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -14,11 +16,12 @@ concurrency:
 
 jobs:
   windows:
-    name: Build Windows x64 packages
+    name: Build Go + Wails Windows x64
     runs-on: windows-2022
-    timeout-minutes: 45
-    env:
-      FLUTTER_SUPPRESS_ANALYTICS: 'true'
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      artifact_version: ${{ steps.version.outputs.artifact_version }}
     defaults:
       run:
         shell: pwsh
@@ -26,80 +29,67 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-
-      - name: Check out the tested Flutter SDK
-        uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with:
-          repository: flutter/flutter
-          ref: '3.41.9'
-          path: .flutter
-          persist-credentials: false
-
-      - name: Cache Flutter artifacts and Dart packages
+          go-version: '1.27.3'
+          cache: true
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Read and validate version
+        id: version
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          $source = Get-Content internal/model/model.go -Raw
+          if ($source -notmatch 'const Version = "([^"]+)"') { throw 'Version missing.' }
+          $version = $Matches[1]
+          if ($env:REF_TYPE -eq 'tag' -and $env:REF_NAME -ne "v$version") { throw 'Tag must match app version.' }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "artifact_version=$version-$($env:GITHUB_SHA.Substring(0,7))" >> $env:GITHUB_OUTPUT
+      - name: Install locked dependencies
+        run: |
+          go mod download
+          if ($LASTEXITCODE -ne 0) { throw 'Go dependencies failed.' }
+          npm --prefix frontend ci
+          if ($LASTEXITCODE -ne 0) { throw 'Frontend dependencies failed.' }
+      - name: Check Go formatting
+        run: |
+          $files = gofmt -l main.go development.go production.go internal
+          if ($files) { throw "Run gofmt on: $files" }
+      - name: Test backend and frontend
+        run: |
+          go test ./internal/...
+          if ($LASTEXITCODE -ne 0) { throw 'Backend tests failed.' }
+          npm --prefix frontend test
+          if ($LASTEXITCODE -ne 0) { throw 'Frontend tests failed.' }
+          npm --prefix frontend run build
+          if ($LASTEXITCODE -ne 0) { throw 'Frontend build failed.' }
+      - name: Cache pinned audio runtime and Wails CLI
         uses: actions/cache@v5
         with:
-          path: |
-            .flutter/bin/cache
-            ~/AppData/Local/Pub/Cache
-          key: windows-flutter-3.41.9-${{ hashFiles('pubspec.lock') }}
-          restore-keys: windows-flutter-3.41.9-
-
-      - name: Set up Flutter
-        run: |
-          "$env:GITHUB_WORKSPACE\.flutter\bin" >> $env:GITHUB_PATH
-          & "$env:GITHUB_WORKSPACE\.flutter\bin\flutter.bat" --version
-          if ($LASTEXITCODE -ne 0) { throw 'Flutter SDK setup failed.' }
-
-      - name: Set up NuGet
-        uses: NuGet/setup-nuget@v3
-        with:
-          nuget-version: '6.x'
-
-      - name: Read package version
-        id: version
-        run: |
-          $pubspec = Get-Content pubspec.yaml -Raw
-          if ($pubspec -notmatch '(?m)^version:\s*([^\s#]+)') {
-            throw 'pubspec.yaml is missing its version.'
-          }
-          $versionName, $buildNumber = $Matches[1] -split '\+', 2
-          if (-not $buildNumber) { $buildNumber = '1' }
-          $shortSha = $env:GITHUB_SHA.Substring(0, 7)
-          "version_name=$versionName" >> $env:GITHUB_OUTPUT
-          "build_number=$buildNumber" >> $env:GITHUB_OUTPUT
-          "artifact_version=$versionName-$buildNumber-$shortSha" >> $env:GITHUB_OUTPUT
-
-      - name: Install locked dependencies
-        run: flutter pub get --enforce-lockfile
-
-      - name: Analyze
-        run: flutter analyze --no-pub
-
-      - name: Test
-        run: flutter test --no-pub
-
-      - name: Test native Windows hotkeys
-        run: ./scripts/test-windows-hotkeys.ps1
-
-      - name: Build Windows release
+          path: .cache
+          key: wails3-0.0-windows-amd64-go1.27.3-mpv652a1dd-v1
+      - name: Build Windows desktop
+        run: ./scripts/build-windows.ps1 -SkipFrontend
+      - name: Exercise real audio runtime
         env:
-          VERSION_NAME: ${{ steps.version.outputs.version_name }}
-          BUILD_NUMBER: ${{ steps.version.outputs.build_number }}
-        run: >
-          flutter build windows --release --no-pub
-          --build-name "$env:VERSION_NAME"
-          --build-number "$env:BUILD_NUMBER"
-
+          BILITUNE_TEST_MPV: '1'
+        run: |
+          $env:BILITUNE_MPV_PATH = Join-Path $env:GITHUB_WORKSPACE 'bin/libmpv-2.dll'
+          go test -count=1 ./internal/player
+          if ($LASTEXITCODE -ne 0) { throw 'Audio runtime test failed.' }
       - name: Install Inno Setup
         run: |
           choco install innosetup --no-progress -y
           if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed.' }
-
-      - name: Package installer and portable build
+      - name: Package EXE and portable ZIP
         env:
           PACKAGE_VERSION: ${{ steps.version.outputs.artifact_version }}
-        run: ./scripts/package-windows.ps1 -Version $env:PACKAGE_VERSION
-
+        run: ./scripts/package-windows.ps1 -Version "$env:PACKAGE_VERSION"
       - name: Upload installer
         id: installer
         uses: actions/upload-artifact@v7
@@ -108,7 +98,6 @@ jobs:
           archive: false
           if-no-files-found: error
           retention-days: 30
-
       - name: Upload portable build
         id: portable
         uses: actions/upload-artifact@v7
@@ -117,7 +106,6 @@ jobs:
           archive: false
           if-no-files-found: error
           retention-days: 30
-
       - name: Upload checksums
         uses: actions/upload-artifact@v7
         with:
@@ -125,21 +113,31 @@ jobs:
           archive: false
           if-no-files-found: error
           retention-days: 30
-
-      - name: Write download summary
+      - name: Package summary
         env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.artifact_version }}
           INSTALLER_URL: ${{ steps.installer.outputs.artifact-url }}
           PORTABLE_URL: ${{ steps.portable.outputs.artifact-url }}
-          PACKAGE_VERSION: ${{ steps.version.outputs.artifact_version }}
         run: |
-          @"
-          ### Windows x64 构建完成
+          "### BiliTune Desktop $env:PACKAGE_VERSION" >> $env:GITHUB_STEP_SUMMARY
+          "Go + Wails 3.0.0 / Windows x64." >> $env:GITHUB_STEP_SUMMARY
+          "[安装版 EXE]($env:INSTALLER_URL) · [免安装 ZIP]($env:PORTABLE_URL)" >> $env:GITHUB_STEP_SUMMARY
 
-          版本：$env:PACKAGE_VERSION
-
-          - [下载安装版 EXE]($env:INSTALLER_URL)
-          - [下载免安装 ZIP]($env:PORTABLE_URL)
-
-          免安装版请完整解压后运行 bilitune.exe，保留 DLL 和 data 文件夹。
-          安装包和 SHA256SUMS.txt 也可在本次运行的 Artifacts 区域下载，保留 30 天。
-          "@ >> $env:GITHUB_STEP_SUMMARY
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: packages
+          merge-multiple: true
+          skip-decompress: true
+      - name: Publish desktop release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "$TAG" packages/* --title "BiliTune Desktop $TAG" --generate-notes --verify-tag
