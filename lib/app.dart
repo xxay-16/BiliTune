@@ -36,6 +36,9 @@ class _BiliTuneAppState extends ConsumerState<BiliTuneApp>
       windowManager.addListener(this);
       trayManager.addListener(this);
       WindowsHotkeyBridge.instance.setActionHandler(_handleHotkeyAction);
+      // Register independently: a tray-icon failure must not disable controls.
+      unawaited(_syncWindowsHotkeys(ref.read(windowsHotkeysProvider)));
+      unawaited(_syncTray(ref.read(playbackProvider)));
       unawaited(_initWindowsControls());
     }
   }
@@ -89,12 +92,14 @@ class _BiliTuneAppState extends ConsumerState<BiliTuneApp>
     await trayManager.setToolTip('BiliTune');
     _windowsControlsReady = true;
     await _syncTray(ref.read(playbackProvider));
-    await _syncWindowsHotkeys(ref.read(windowsHotkeysProvider));
   }
 
   Future<void> _syncWindowsHotkeys(List<WindowsHotkeyBinding> bindings) async {
     if (!Platform.isWindows) return;
-    await WindowsHotkeyBridge.instance.sync(bindings);
+    final result = await WindowsHotkeyBridge.instance.sync(bindings);
+    if (mounted && result != null) {
+      ref.read(windowsHotkeyRegistrationProvider.notifier).update(result);
+    }
   }
 
   Future<void> _handleHotkeyAction(WindowsHotkeyAction action) async {
@@ -107,10 +112,22 @@ class _BiliTuneAppState extends ConsumerState<BiliTuneApp>
         ref.read(playbackProvider.notifier).next();
       case WindowsHotkeyAction.toggleWindow:
         await _toggleWindow();
+      case WindowsHotkeyAction.stop:
+        await ref.read(playbackProvider.notifier).stop();
+      case WindowsHotkeyAction.play:
+        await ref.read(playbackProvider.notifier).setPlaying(true);
+      case WindowsHotkeyAction.pause:
+        await ref.read(playbackProvider.notifier).setPlaying(false);
     }
   }
 
   Future<void> _syncTray(PlaybackState playback) async {
+    await WindowsHotkeyBridge.instance.updatePlayback(
+      title: playback.track?.title ?? 'BiliTune',
+      artist: playback.track?.artist ?? '',
+      isPlaying: playback.isPlaying,
+      hasTrack: playback.track != null,
+    );
     if (!_windowsControlsReady) return;
     final track = playback.track;
     final title = track?.title ?? 'BiliTune';

@@ -12,6 +12,8 @@
 
 #include "win32_window.h"
 #include "tray_menu.h"
+#include "windows_hotkeys.h"
+#include "windows_media_controls.h"
 
 // A window that does nothing but host a Flutter view.
 class FlutterWindow : public Win32Window {
@@ -41,17 +43,13 @@ class FlutterWindow : public Win32Window {
       download_channel_;
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> tray_channel_;
   std::shared_ptr<TrayMenu> tray_menu_;
-  std::map<int, std::string> hotkey_actions_;
+  std::unique_ptr<WindowsHotkeys> hotkeys_;
+  std::unique_ptr<WindowsMediaControls> media_controls_;
 
   void ConfigureHotkeyChannel();
   void ConfigureDownloadChannel();
   void ConfigureTrayChannel();
-  void UnregisterHotkeys();
-  bool RegisterHotkeyBinding(const std::string& action,
-                             const std::string& key,
-                             const flutter::EncodableList* modifiers,
-                             int hotkey_id);
-  void EmitHotkeyPressed(int hotkey_id);
+  void EmitHotkeyAction(const std::string& action);
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

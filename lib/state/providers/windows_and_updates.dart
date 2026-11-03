@@ -152,6 +152,20 @@ final windowsHotkeysProvider =
       WindowsHotkeyNotifier.new,
     );
 
+class WindowsHotkeyRegistrationNotifier
+    extends Notifier<WindowsHotkeyRegistration> {
+  @override
+  WindowsHotkeyRegistration build() => const WindowsHotkeyRegistration();
+
+  void update(WindowsHotkeyRegistration result) => state = result;
+}
+
+final windowsHotkeyRegistrationProvider =
+    NotifierProvider<
+      WindowsHotkeyRegistrationNotifier,
+      WindowsHotkeyRegistration
+    >(WindowsHotkeyRegistrationNotifier.new);
+
 @immutable
 class AppUpdateState {
   const AppUpdateState({

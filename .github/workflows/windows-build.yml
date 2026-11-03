@@ -78,6 +78,9 @@ jobs:
       - name: Test
         run: flutter test --no-pub
 
+      - name: Test native Windows hotkeys
+        run: ./scripts/test-windows-hotkeys.ps1
+
       - name: Build Windows release
         env:
           VERSION_NAME: ${{ steps.version.outputs.version_name }}

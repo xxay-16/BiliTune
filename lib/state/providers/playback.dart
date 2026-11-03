@@ -501,6 +501,30 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
     }
   }
 
+  Future<void> setPlaying(bool playing) async {
+    if (state.source != null) {
+      if (playing) {
+        await _ensurePlayer().play();
+      } else {
+        await _ensurePlayer().pause();
+      }
+      return;
+    }
+    if (playing) {
+      if (state.track != null && !state.isPlaying) {
+        await _resumePlaybackState(state.copyWith(isPlaying: true));
+      }
+    } else {
+      state = state.copyWith(isPlaying: false);
+    }
+  }
+
+  Future<void> stop() async {
+    await setPlaying(false);
+    await seek(Duration.zero);
+    state = state.copyWith(isPlaying: false, isBuffering: false);
+  }
+
   void seekFraction(double fraction) {
     final next = Duration(
       milliseconds: (state.duration.inMilliseconds * fraction.clamp(0.0, 1.0))

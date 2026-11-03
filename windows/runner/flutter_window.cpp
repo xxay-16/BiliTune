@@ -1,7 +1,5 @@
 #include "flutter_window.h"
 
-#include <algorithm>
-#include <cctype>
 #include <optional>
 #include <string>
 
@@ -61,49 +59,6 @@ UINT ModifiersFromList(const EncodableList* values) {
   return modifiers;
 }
 
-UINT VirtualKeyFromToken(std::string key) {
-  if (key.size() == 1) {
-    const unsigned char ch = static_cast<unsigned char>(key[0]);
-    if (std::isalpha(ch)) {
-      return static_cast<UINT>(std::toupper(ch));
-    }
-    if (std::isdigit(ch)) {
-      return static_cast<UINT>(ch);
-    }
-  }
-
-  if (key.size() >= 2 && key[0] == 'F' &&
-      std::all_of(key.begin() + 1, key.end(), [](unsigned char ch) {
-        return std::isdigit(ch) != 0;
-      })) {
-    const int index = std::stoi(key.substr(1));
-    if (index >= 1 && index <= 24) {
-      return VK_F1 + index - 1;
-    }
-  }
-
-  if (key == "Space") return VK_SPACE;
-  if (key == "Enter") return VK_RETURN;
-  if (key == "Escape") return VK_ESCAPE;
-  if (key == "Backspace") return VK_BACK;
-  if (key == "Tab") return VK_TAB;
-  if (key == "ArrowLeft") return VK_LEFT;
-  if (key == "ArrowRight") return VK_RIGHT;
-  if (key == "ArrowUp") return VK_UP;
-  if (key == "ArrowDown") return VK_DOWN;
-  if (key == "Home") return VK_HOME;
-  if (key == "End") return VK_END;
-  if (key == "PageUp") return VK_PRIOR;
-  if (key == "PageDown") return VK_NEXT;
-  if (key == "Insert") return VK_INSERT;
-  if (key == "Delete") return VK_DELETE;
-  if (key == "MediaPlayPause") return VK_MEDIA_PLAY_PAUSE;
-  if (key == "MediaNextTrack") return VK_MEDIA_NEXT_TRACK;
-  if (key == "MediaPreviousTrack") return VK_MEDIA_PREV_TRACK;
-  if (key == "MediaStop") return VK_MEDIA_STOP;
-  return 0;
-}
-
 }  // namespace
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
@@ -145,7 +100,8 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
-  UnregisterHotkeys();
+  hotkeys_ = nullptr;
+  media_controls_ = nullptr;
   hotkey_channel_ = nullptr;
   download_channel_ = nullptr;
   tray_channel_ = nullptr;
@@ -161,6 +117,20 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  // Handle our commands before plugin delegation so another window procedure
+  // cannot swallow global hotkeys or keyboard media commands.
+  if (hotkeys_) {
+    std::string action;
+    if (message == WM_HOTKEY) {
+      action = hotkeys_->ActionForHotkey(static_cast<int>(wparam));
+    } else if (message == WM_APPCOMMAND || message == kWindowsMediaCommand) {
+      action = hotkeys_->ActionForAppCommand(lparam);
+    }
+    if (!action.empty()) {
+      EmitHotkeyAction(action);
+      return message == WM_HOTKEY ? 0 : TRUE;
+    }
+  }
   if (tray_menu_) {
     const auto result = tray_menu_->HandleMessage(message, wparam, lparam);
     if (result) return *result;
@@ -176,10 +146,6 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
   }
 
   switch (message) {
-    case WM_HOTKEY:
-      EmitHotkeyPressed(static_cast<int>(wparam));
-      return 0;
-
     case WM_FONTCHANGE:
       flutter_controller_->engine()->ReloadSystemFonts();
       break;
@@ -228,6 +194,9 @@ void FlutterWindow::ConfigureTrayChannel() {
 }
 
 void FlutterWindow::ConfigureHotkeyChannel() {
+  media_controls_ = std::make_unique<WindowsMediaControls>(GetHandle());
+  hotkeys_ = std::make_unique<WindowsHotkeys>(GetHandle(), WindowsHotkeys::Register{},
+      WindowsHotkeys::Unregister{}, !media_controls_->available());
   hotkey_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
           flutter_controller_->engine()->messenger(),
@@ -238,12 +207,33 @@ void FlutterWindow::ConfigureHotkeyChannel() {
       [this](const flutter::MethodCall<flutter::EncodableValue>& call,
              std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
                  result) {
+        if (call.method_name() == "updatePlayback") {
+          const auto* arguments = call.arguments();
+          const auto* map = arguments == nullptr ? nullptr : std::get_if<EncodableMap>(arguments);
+          if (map == nullptr) {
+            result->Error("invalid_arguments", "Expected playback state");
+            return;
+          }
+          const auto* playing_value = FindMapValue(*map, "isPlaying");
+          const auto* playing = playing_value == nullptr ? nullptr : std::get_if<bool>(playing_value);
+          const auto* track_value = FindMapValue(*map, "hasTrack");
+          const auto* has_track = track_value == nullptr ? nullptr : std::get_if<bool>(track_value);
+          media_controls_->Update(Utf16FromUtf8(StringFromValue(FindMapValue(*map, "title"))),
+              Utf16FromUtf8(StringFromValue(FindMapValue(*map, "artist"))),
+              playing != nullptr && *playing, has_track != nullptr && *has_track);
+          result->Success();
+          return;
+        }
+        if (call.method_name() == "suspendHotkeys") {
+          hotkeys_->Suspend();
+          media_controls_->Suspend(true);
+          result->Success();
+          return;
+        }
         if (call.method_name() != "setHotkeys") {
           result->NotImplemented();
           return;
         }
-
-        UnregisterHotkeys();
 
         const auto* arguments = call.arguments();
         const auto* arguments_map = arguments == nullptr
@@ -258,8 +248,7 @@ void FlutterWindow::ConfigureHotkeyChannel() {
                                    : std::get_if<EncodableList>(
                                          bindings_value);
 
-        int registered = 0;
-        int hotkey_id = 5600;
+        std::vector<HotkeyBinding> requested;
         if (bindings != nullptr) {
           for (const auto& binding_value : *bindings) {
             const auto* binding = std::get_if<EncodableMap>(&binding_value);
@@ -276,15 +265,24 @@ void FlutterWindow::ConfigureHotkeyChannel() {
                                         : std::get_if<EncodableList>(
                                               modifiers_value);
 
-            if (RegisterHotkeyBinding(action, key, modifiers, hotkey_id)) {
-              registered++;
-              hotkey_id++;
-            }
+            requested.push_back({action, key, ModifiersFromList(modifiers)});
           }
         }
 
+        const auto registration = hotkeys_->SetBindings(requested);
+        media_controls_->Suspend(false);
+        EncodableList failures;
+        for (const auto& failure : registration.failures) {
+          failures.push_back(EncodableValue(EncodableMap{
+              {EncodableValue("action"), EncodableValue(failure.action)},
+              {EncodableValue("key"), EncodableValue(failure.key)},
+              {EncodableValue("errorCode"), EncodableValue(static_cast<int>(failure.error_code))},
+              {EncodableValue("isDefault"), EncodableValue(failure.is_default)},
+          }));
+        }
         result->Success(EncodableValue(EncodableMap{
-            {EncodableValue("registered"), EncodableValue(registered)},
+            {EncodableValue("registered"), EncodableValue(registration.registered)},
+            {EncodableValue("failures"), EncodableValue(failures)},
         }));
       });
 }
@@ -346,43 +344,13 @@ void FlutterWindow::ConfigureDownloadChannel() {
       });
 }
 
-bool FlutterWindow::RegisterHotkeyBinding(const std::string& action,
-                                          const std::string& key,
-                                          const EncodableList* modifiers,
-                                          int hotkey_id) {
-  if (action.empty() || key.empty()) {
-    return false;
-  }
-  const UINT virtual_key = VirtualKeyFromToken(key);
-  if (virtual_key == 0) {
-    return false;
-  }
-  if (!RegisterHotKey(GetHandle(), hotkey_id, ModifiersFromList(modifiers),
-                      virtual_key)) {
-    return false;
-  }
-  hotkey_actions_[hotkey_id] = action;
-  return true;
-}
-
-void FlutterWindow::UnregisterHotkeys() {
-  for (const auto& entry : hotkey_actions_) {
-    UnregisterHotKey(GetHandle(), entry.first);
-  }
-  hotkey_actions_.clear();
-}
-
-void FlutterWindow::EmitHotkeyPressed(int hotkey_id) {
-  if (!hotkey_channel_) {
-    return;
-  }
-  const auto it = hotkey_actions_.find(hotkey_id);
-  if (it == hotkey_actions_.end()) {
+void FlutterWindow::EmitHotkeyAction(const std::string& action) {
+  if (!hotkey_channel_ || action.empty()) {
     return;
   }
   hotkey_channel_->InvokeMethod(
       "onHotkeyPressed",
       std::make_unique<EncodableValue>(EncodableMap{
-          {EncodableValue("action"), EncodableValue(it->second)},
+          {EncodableValue("action"), EncodableValue(action)},
       }));
 }

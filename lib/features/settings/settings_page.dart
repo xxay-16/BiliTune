@@ -204,7 +204,7 @@ class SettingsPage extends ConsumerWidget {
           _Section(
             title: 'Windows',
             children: [
-              const _SectionNote(text: '全局快捷键默认不绑定，需手动录制后才会在后台生效。'),
+              const _SectionNote(text: '键盘播放/暂停、切歌和停止媒体键默认可用，也可录制自定义组合键在后台控制。'),
               _SwitchTile(
                 icon: Icons.bolt_outlined,
                 title: '开机自启动',
@@ -232,8 +232,15 @@ class SettingsPage extends ConsumerWidget {
                     ref.watch(windowsHotkeysProvider),
                     action,
                   ),
+                  errorMessage: ref
+                      .watch(windowsHotkeyRegistrationProvider)
+                      .errorFor(action),
                   onRecord: () async {
-                    final binding = await _recordWindowsHotkey(context, action);
+                    final binding = await _recordWindowsHotkey(
+                      context,
+                      action,
+                      ref,
+                    );
                     if (binding == null) return;
                     await ref
                         .read(windowsHotkeysProvider.notifier)
@@ -652,11 +659,28 @@ WindowsHotkeyBinding? _bindingFor(
 Future<WindowsHotkeyBinding?> _recordWindowsHotkey(
   BuildContext context,
   WindowsHotkeyAction action,
-) {
-  return showDialog<WindowsHotkeyBinding>(
-    context: context,
-    builder: (_) => _WindowsHotkeyRecordDialog(action: action),
-  );
+  WidgetRef ref,
+) async {
+  final bridge = WindowsHotkeyBridge.instance;
+  final previousBindings = ref.read(windowsHotkeysProvider);
+  await bridge.suspend();
+  try {
+    if (!context.mounted) return null;
+    return await showDialog<WindowsHotkeyBinding>(
+      context: context,
+      builder: (_) => _WindowsHotkeyRecordDialog(action: action),
+    );
+  } finally {
+    if (context.mounted) {
+      final result = await bridge.resume(ref.read(windowsHotkeysProvider));
+      if (context.mounted && result != null) {
+        ref.read(windowsHotkeyRegistrationProvider.notifier).update(result);
+      }
+    } else {
+      // Never leave the application's system keys suspended after closing a route.
+      await bridge.resume(previousBindings);
+    }
+  }
 }
 
 String _speedLabel(double value) =>
@@ -1499,12 +1523,14 @@ class _WindowsHotkeyTile extends StatelessWidget {
     required this.binding,
     required this.onRecord,
     required this.onClear,
+    this.errorMessage,
   });
 
   final WindowsHotkeyAction action;
   final WindowsHotkeyBinding? binding;
   final VoidCallback onRecord;
   final VoidCallback onClear;
+  final String? errorMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -1516,8 +1542,10 @@ class _WindowsHotkeyTile extends StatelessWidget {
         style: AppTypography.body.copyWith(color: colors.textPrimary),
       ),
       subtitle: Text(
-        action.description,
-        style: AppTypography.caption.copyWith(color: colors.textSecondary),
+        errorMessage ?? action.description,
+        style: AppTypography.caption.copyWith(
+          color: errorMessage == null ? colors.textSecondary : colors.error,
+        ),
       ),
       trailing: SizedBox(
         width: 240,
@@ -1527,7 +1555,10 @@ class _WindowsHotkeyTile extends StatelessWidget {
           children: [
             Flexible(
               child: Text(
-                binding?.displayLabel ?? '未设置',
+                binding?.displayLabel ??
+                    (action == WindowsHotkeyAction.toggleWindow
+                        ? '未设置'
+                        : '键盘媒体键'),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: AppTypography.caption.copyWith(
@@ -1548,7 +1579,7 @@ class _WindowsHotkeyTile extends StatelessWidget {
               ),
             ),
             Tooltip(
-              message: '清除绑定',
+              message: '清除自定义绑定',
               child: IconButton(
                 icon: const Icon(Icons.close_rounded),
                 color: colors.textSecondary,
@@ -1569,6 +1600,9 @@ IconData _iconFor(WindowsHotkeyAction action) {
     WindowsHotkeyAction.previousTrack => Icons.skip_previous_rounded,
     WindowsHotkeyAction.nextTrack => Icons.skip_next_rounded,
     WindowsHotkeyAction.toggleWindow => Icons.window_rounded,
+    WindowsHotkeyAction.stop => Icons.stop_circle_outlined,
+    WindowsHotkeyAction.play => Icons.play_circle_outline_rounded,
+    WindowsHotkeyAction.pause => Icons.pause_circle_outline_rounded,
   };
 }
 
