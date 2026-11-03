@@ -109,6 +109,25 @@ func (s *Service) Handler() http.Handler {
 		return nil, s.Favorite(r.Context(), body.Track, body.From, body.To)
 	})
 	jsonRoute("GET /api/discover", func(w http.ResponseWriter, r *http.Request) (any, error) { return s.client.Discover(r.Context()) })
+	jsonRoute("POST /api/artist/resolve", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		var track model.Track
+		if err := decode(r, &track); err != nil {
+			return nil, err
+		}
+		return s.ResolveArtist(r.Context(), track)
+	})
+	jsonRoute("GET /api/artist", func(w http.ResponseWriter, r *http.Request) (any, error) { return s.client.Artist(r.Context(), id(r)) })
+	jsonRoute("GET /api/artist/albums", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		return s.client.ArtistAlbums(r.Context(), id(r))
+	})
+	jsonRoute("GET /api/artist/videos", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+		return s.client.ArtistVideos(r.Context(), id(r), page)
+	})
+	jsonRoute("GET /api/album", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		mid, _ := strconv.ParseInt(r.URL.Query().Get("mid"), 10, 64)
+		return s.client.Album(r.Context(), mid, id(r), r.URL.Query().Get("type"))
+	})
 	jsonRoute("GET /api/search", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 		return s.Search(r.Context(), r.URL.Query().Get("q"), page, r.URL.Query().Get("music") == "true")
@@ -219,7 +238,7 @@ func (s *Service) Handler() http.Handler {
 			return nil, err
 		}
 		u, err := url.Parse(body.URL)
-		if err != nil || u.Scheme != "https" || !(u.Hostname() == "www.bilibili.com" || u.Hostname() == "github.com") {
+		if err != nil || u.Scheme != "https" || !(u.Hostname() == "www.bilibili.com" || u.Hostname() == "space.bilibili.com" || u.Hostname() == "github.com") {
 			return nil, fmt.Errorf("仅支持打开 Bilibili 和 GitHub 链接")
 		}
 		s.mu.RLock()

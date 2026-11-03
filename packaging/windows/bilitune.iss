@@ -1,7 +1,7 @@
 #define MyAppName "BiliTune"
 #define MyAppExeName "bilitune.exe"
 #ifndef AppVersion
-#define AppVersion "0.2.1"
+#define AppVersion "0.2.2"
 #endif
 #ifndef SourceDir
 #define SourceDir "..\..\bin"

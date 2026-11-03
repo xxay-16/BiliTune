@@ -2,6 +2,8 @@ export interface Track {
   id: string;
   title: string;
   artist: string;
+  artistMid?: number;
+  artistAvatar?: string;
   durationMs: number;
   type: string;
   coverUrl?: string;
@@ -12,6 +14,35 @@ export interface Track {
   sourceUrl?: string;
   localPath?: string;
   playCount?: number;
+}
+export interface Artist {
+  mid: number;
+  name: string;
+  avatar?: string;
+  banner?: string;
+  signature?: string;
+  followers?: number;
+  videoCount?: number;
+}
+export interface Album {
+  id: number;
+  type: "season" | "series";
+  mid: number;
+  title: string;
+  coverUrl?: string;
+  intro?: string;
+  count: number;
+  artist?: string;
+}
+export interface AlbumDetail {
+  album: Album;
+  tracks: Track[];
+}
+export interface ArtistVideos {
+  tracks: Track[];
+  page: number;
+  total: number;
+  hasMore: boolean;
 }
 export interface Folder {
   id: number;

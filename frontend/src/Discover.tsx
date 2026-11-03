@@ -7,7 +7,14 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { useMemo } from "react";
-import { Cover, Empty, IconButton, Spinner, TrackList } from "./components";
+import {
+  ArtistLink,
+  Cover,
+  Empty,
+  IconButton,
+  Spinner,
+  TrackList,
+} from "./components";
 import type { Player, Shelf, Track } from "./types";
 
 interface Props {
@@ -24,6 +31,7 @@ interface Props {
   onRefresh: () => void;
   onPlay: (track: Track, queue: Track[]) => void;
   onLike: (track: Track) => void;
+  onArtist: (track: Track) => void;
   onContext: (track: Track, x: number, y: number, queue: Track[]) => void;
 }
 
@@ -69,30 +77,35 @@ export function DiscoverPage(props: Props) {
   const selected =
     shelves.find((shelf) => shelf.title === props.chartTitle) || shelves[0];
   const card = (track: Track, queue: Track[]) => (
-    <button
+    <article
       className="recommendation-card"
       key={track.id}
-      onClick={() => onPlay(track, queue)}
       onContextMenu={(event) => {
         event.preventDefault();
         onContext(track, event.clientX, event.clientY, queue);
       }}
     >
-      <div className="recommendation-art">
-        <Cover track={track} size={240} />
-        {!!track.playCount && (
-          <span className="listen-count" title={`播放量 ${track.playCount}`}>
-            <Headphones size={12} />
-            {plays(track.playCount)}
+      <button
+        className="recommendation-track"
+        onClick={() => onPlay(track, queue)}
+        title={"播放 " + track.title}
+      >
+        <div className="recommendation-art">
+          <Cover track={track} size={240} />
+          {!!track.playCount && (
+            <span className="listen-count" title={`播放量 ${track.playCount}`}>
+              <Headphones size={12} />
+              {plays(track.playCount)}
+            </span>
+          )}
+          <span className="recommendation-play">
+            <Play size={22} fill="currentColor" />
           </span>
-        )}
-        <span className="recommendation-play">
-          <Play size={22} fill="currentColor" />
-        </span>
-      </div>
-      <strong title={track.title}>{track.title}</strong>
-      <small>{track.artist || "Bilibili 音乐"}</small>
-    </button>
+        </div>
+        <strong title={track.title}>{track.title}</strong>
+      </button>
+      <ArtistLink track={track} onArtist={props.onArtist} />
+    </article>
   );
   return (
     <div
@@ -273,6 +286,7 @@ export function DiscoverPage(props: Props) {
                   </button>
                 </div>
                 <TrackList
+                  onArtist={props.onArtist}
                   tracks={selected.tracks}
                   player={player}
                   onPlay={(track) => onPlay(track, selected.tracks)}

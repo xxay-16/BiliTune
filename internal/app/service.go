@@ -113,6 +113,42 @@ func (s *Service) setError(message string) {
 }
 func (s *Service) Player() model.Player { s.mu.RLock(); defer s.mu.RUnlock(); return s.state.Player }
 func (s *Service) Queue() []model.Track { return s.snapshot().Queue }
+func (s *Service) ResolveArtist(ctx context.Context, track model.Track) (model.Artist, error) {
+	artist, err := s.client.ResolveArtist(ctx, track)
+	if err != nil {
+		return model.Artist{}, err
+	}
+	update := func(item model.Track) model.Track {
+		match := track.ID != "" && item.ID == track.ID || track.BVID != "" && item.BVID == track.BVID || track.AID > 0 && item.AID == track.AID || track.AudioID > 0 && item.AudioID == track.AudioID
+		if match {
+			item.ArtistMID = artist.MID
+			if artist.Avatar != "" {
+				item.ArtistAvatar = artist.Avatar
+			}
+			if item.Artist == "" {
+				item.Artist = artist.Name
+			}
+		}
+		return item
+	}
+	s.mu.Lock()
+	for i, item := range s.state.History {
+		s.state.History[i] = update(item)
+	}
+	for i, item := range s.state.Queue {
+		s.state.Queue[i] = update(item)
+	}
+	for i, item := range s.state.Downloads {
+		s.state.Downloads[i].Track = update(item.Track)
+	}
+	if s.state.Player.Track != nil {
+		copy := update(*s.state.Player.Track)
+		s.state.Player.Track = &copy
+	}
+	s.mu.Unlock()
+	s.persist()
+	return artist, nil
+}
 func (s *Service) Bootstrap() model.Bootstrap {
 	state := s.snapshot()
 	s.mu.RLock()

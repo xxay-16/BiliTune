@@ -12,19 +12,21 @@ import {
   SkipForward,
 } from "lucide-react";
 import { api, coverURL, duration } from "./api";
-import { Cover, IconButton } from "./components";
-import type { Player, Lyric } from "./types";
+import { ArtistLink, Cover, IconButton } from "./components";
+import type { Player, Lyric, Track } from "./types";
 
 export function Immersive({
   player,
   onClose,
   command,
   onFavorite,
+  onArtist,
 }: {
   player: Player;
   onClose: () => void;
   command: (action: string, value?: number) => void;
   onFavorite: () => void;
+  onArtist: (track: Track) => void;
 }) {
   const [lyrics, setLyrics] = useState<Lyric[]>([]);
   const [loading, setLoading] = useState(false);
@@ -89,7 +91,7 @@ export function Immersive({
           <Cover track={player.track} size={340} />
           <div className="immersive-title">
             <h1>{player.track?.title || "选择一首音乐"}</h1>
-            <p>{player.track?.artist}</p>
+            <ArtistLink track={player.track} onArtist={onArtist} />
           </div>
           <div className="immersive-timeline">
             <input

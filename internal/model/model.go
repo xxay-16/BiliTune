@@ -1,11 +1,13 @@
 package model
 
-const Version = "0.2.1"
+const Version = "0.2.2"
 
 type Track struct {
 	ID              string `json:"id"`
 	Title           string `json:"title"`
 	Artist          string `json:"artist"`
+	ArtistMID       int64  `json:"artistMid,omitempty"`
+	ArtistAvatar    string `json:"artistAvatar,omitempty"`
 	DurationMS      int64  `json:"durationMs"`
 	Type            string `json:"type"`
 	CoverURL        string `json:"coverUrl,omitempty"`
@@ -17,6 +19,38 @@ type Track struct {
 	SourceExpiresAt int64  `json:"sourceExpiresAt,omitempty"`
 	PlayCount       int64  `json:"playCount,omitempty"`
 	LocalPath       string `json:"localPath,omitempty"`
+}
+
+type Artist struct {
+	MID        int64  `json:"mid"`
+	Name       string `json:"name"`
+	Avatar     string `json:"avatar,omitempty"`
+	Banner     string `json:"banner,omitempty"`
+	Signature  string `json:"signature,omitempty"`
+	Followers  int64  `json:"followers,omitempty"`
+	VideoCount int    `json:"videoCount,omitempty"`
+}
+
+// Album maps public Bilibili seasons and series to desktop albums.
+type Album struct {
+	ID       int64  `json:"id"`
+	Type     string `json:"type"`
+	MID      int64  `json:"mid"`
+	Title    string `json:"title"`
+	CoverURL string `json:"coverUrl,omitempty"`
+	Intro    string `json:"intro,omitempty"`
+	Count    int    `json:"count"`
+	Artist   string `json:"artist,omitempty"`
+}
+type AlbumDetail struct {
+	Album  Album   `json:"album"`
+	Tracks []Track `json:"tracks"`
+}
+type ArtistVideos struct {
+	Tracks  []Track `json:"tracks"`
+	Page    int     `json:"page"`
+	Total   int     `json:"total"`
+	HasMore bool    `json:"hasMore"`
 }
 
 type Folder struct {

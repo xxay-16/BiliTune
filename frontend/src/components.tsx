@@ -147,12 +147,42 @@ export function SearchField({
     </div>
   );
 }
+export function ArtistLink({
+  track,
+  onArtist,
+  className = "",
+}: {
+  track?: Track | null;
+  onArtist?: (track: Track) => void;
+  className?: string;
+}) {
+  const label = track?.artist || "未知创作者";
+  const resolvable =
+    track && (track.artistMid || track.bvid || track.aid || track.audioId);
+  if (!track || !resolvable || !onArtist)
+    return <span className={`artist-name ${className}`}>{label}</span>;
+  return (
+    <button
+      type="button"
+      className={`artist-link ${className}`}
+      title={`查看 ${label} 的主页`}
+      onClick={(event) => {
+        event.stopPropagation();
+        onArtist(track);
+      }}
+      onDoubleClick={(event) => event.stopPropagation()}
+    >
+      {label}
+    </button>
+  );
+}
 export function TrackList({
   tracks,
   player,
   onPlay,
   onContext,
   onLike,
+  onArtist,
   liked = false,
 }: {
   tracks: Track[];
@@ -160,6 +190,7 @@ export function TrackList({
   onPlay: (track: Track) => void;
   onContext: (track: Track, x: number, y: number) => void;
   onLike?: (track: Track) => void;
+  onArtist?: (track: Track) => void;
   liked?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -234,14 +265,17 @@ export function TrackList({
                 )}
               </button>
               <Cover track={track} size={42} />
-              <button
-                className="track-title"
-                onClick={() => onPlay(track)}
-                title={track.title}
-              >
-                <strong>{track.title || "失效的视频"}</strong>
-                <span>{track.artist || "未知创作者"}</span>
-              </button>
+              <div className="track-metadata">
+                <button
+                  type="button"
+                  className="track-title"
+                  onClick={() => onPlay(track)}
+                  title={track.title}
+                >
+                  <strong>{track.title || "失效的视频"}</strong>
+                </button>
+                <ArtistLink track={track} onArtist={onArtist} />
+              </div>
               <span
                 className="track-kind"
                 title={track.type === "audio" ? "音频" : "视频音轨"}
@@ -478,12 +512,14 @@ export function PlayerBar({
   onFavorite,
   onQueue,
   onImmersive,
+  onArtist,
 }: {
   player: Player;
   command: (action: string, value?: number) => void;
   onFavorite: () => void;
   onQueue: () => void;
   onImmersive: () => void;
+  onArtist?: (track: Track) => void;
 }) {
   const [seeking, setSeeking] = useState(false);
   const [position, setPosition] = useState(0);
@@ -509,17 +545,31 @@ export function PlayerBar({
         } as CSSProperties
       }
     >
-      <button
-        className="now-playing"
-        onClick={onImmersive}
-        title="打开沉浸播放"
-      >
-        <Cover track={player.track} size={52} />
+      <div className="now-playing">
+        <button
+          className="now-playing-art"
+          title="打开沉浸播放"
+          disabled={!player.track}
+          onClick={onImmersive}
+        >
+          <Cover track={player.track} size={52} />
+        </button>
         <span>
-          <strong>{player.track?.title || "还没有播放的音乐"}</strong>
-          <small>{player.track?.artist || "从收藏夹或搜索开始聆听"}</small>
+          <button
+            className="now-playing-title"
+            onClick={onImmersive}
+            disabled={!player.track}
+            title={player.track?.title || "还没有播放的音乐"}
+          >
+            <strong>{player.track?.title || "还没有播放的音乐"}</strong>
+          </button>
+          {player.track ? (
+            <ArtistLink track={player.track} onArtist={onArtist} />
+          ) : (
+            <small>从收藏夹或搜索开始聆听</small>
+          )}
         </span>
-      </button>
+      </div>
       <IconButton
         title="添加到收藏夹"
         disabled={!player.track}

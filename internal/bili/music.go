@@ -48,6 +48,14 @@ func media(item map[string]any, favorite bool) model.Track {
 	if artist == "" {
 		artist = String(item["author"])
 	}
+	artistMID := Int(owner["mid"])
+	if artistMID == 0 {
+		artistMID = Int(item["mid"])
+	}
+	avatar := URL(String(owner["face"]))
+	if avatar == "" {
+		avatar = URL(String(item["upic"]))
+	}
 	cover := String(item["pic"])
 	if cover == "" {
 		cover = String(item["cover"])
@@ -57,9 +65,13 @@ func media(item map[string]any, favorite bool) model.Track {
 		id = fmt.Sprintf("av%d", aid)
 	}
 	if Int(item["type"]) == 12 || String(item["business"]) == "audio" {
-		return model.Track{ID: fmt.Sprintf("au%d", aid), AudioID: aid, Title: clean(item["title"]), Artist: artist, DurationMS: duration(item["duration"]), Type: "audio", CoverURL: URL(cover)}
+		return model.Track{ID: fmt.Sprintf("au%d", aid), AudioID: aid, Title: clean(item["title"]), Artist: clean(artist), ArtistMID: artistMID, ArtistAvatar: avatar, DurationMS: duration(item["duration"]), Type: "audio", CoverURL: URL(cover)}
 	}
-	return model.Track{ID: id, Title: clean(item["title"]), Artist: artist, DurationMS: duration(item["duration"]), Type: "video", CoverURL: URL(cover), BVID: bvid, AID: aid, CID: Int(item["cid"]), PlayCount: Int(Map(item["stat"])["view"])}
+	playCount := Int(Map(item["stat"])["view"])
+	if playCount == 0 {
+		playCount = Int(item["play"])
+	}
+	return model.Track{ID: id, Title: clean(item["title"]), Artist: clean(artist), ArtistMID: artistMID, ArtistAvatar: avatar, DurationMS: duration(item["duration"]), Type: "video", CoverURL: URL(cover), BVID: bvid, AID: aid, CID: Int(item["cid"]), PlayCount: playCount}
 }
 func (c *Client) Account(ctx context.Context) (*model.Account, error) {
 	data, err := c.Request(ctx, "GET", "/x/web-interface/nav", nil, false)
@@ -170,7 +182,7 @@ func (c *Client) Search(ctx context.Context, query string, page int, musicOnly b
 		if err != nil {
 			return nil, err
 		}
-		return []model.Track{{ID: "au" + match[1], AudioID: Int(match[1]), Type: "audio", Title: clean(data["title"]), Artist: String(data["author"]), CoverURL: URL(String(data["cover"])), DurationMS: duration(data["duration"])}}, nil
+		return []model.Track{{ID: "au" + match[1], AudioID: Int(match[1]), Type: "audio", Title: clean(data["title"]), Artist: String(data["author"]), ArtistMID: Int(data["uid"]), ArtistAvatar: URL(String(data["uname_face"])), CoverURL: URL(String(data["cover"])), DurationMS: duration(data["duration"])}}, nil
 	}
 	if bvid := bvidPattern.FindString(query); bvid != "" {
 		track, err := c.Hydrate(ctx, model.Track{BVID: bvid, ID: bvid})

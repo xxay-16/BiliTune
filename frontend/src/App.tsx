@@ -30,9 +30,11 @@ import {
   ChartNoAxesColumnIncreasing,
   ChevronLeft,
   ChevronsUpDown,
+  UserRound,
 } from "lucide-react";
 import { api, bytes, filterTracks, coverURL } from "./api";
 import {
+  ArtistLink,
   ContextMenu,
   Cover,
   CreateButton,
@@ -50,9 +52,11 @@ import { CreateFolderDialog, FolderPicker, LoginDialog } from "./dialogs";
 import { SettingsPage } from "./Settings";
 import { Immersive } from "./Immersive";
 import { DiscoverPage } from "./Discover";
+import { ArtistPage, AlbumPage } from "./Artist";
 import { usePageNavigation } from "./navigation";
 import type {
   Account,
+  Artist,
   Bootstrap,
   Download,
   Folder,
@@ -77,6 +81,7 @@ export function App() {
     [fatal, setFatal] = useState("");
   const {
     page,
+    route,
     navigate: setPage,
     back,
     forward,
@@ -131,6 +136,40 @@ export function App() {
       error ? 7000 : 3500,
     );
   }, []);
+  const currentRoute = useRef(route);
+  currentRoute.current = route;
+  const artistRequest = useRef<AbortController | null>(null);
+  const openArtist = useCallback(
+    (track: Track) => {
+      artistRequest.current?.abort();
+      const enter = (artist: Artist) => {
+        setImmersive(false);
+        setQueueOpen(false);
+        setPage({ page: "artist", artist });
+      };
+      if (track.artistMid) {
+        enter({
+          mid: track.artistMid,
+          name: track.artist,
+          avatar: track.artistAvatar,
+        });
+        return;
+      }
+      const controller = new AbortController();
+      artistRequest.current = controller;
+      const origin = currentRoute.current;
+      api<Artist>("artist/resolve", track, controller.signal)
+        .then((artist) => {
+          if (!controller.signal.aborted && origin === currentRoute.current)
+            enter(artist);
+        })
+        .catch((err) => {
+          if (!controller.signal.aborted) notify(err.message, true);
+        });
+    },
+    [setPage, notify],
+  );
+  useEffect(() => () => artistRequest.current?.abort(), []);
   const applyBoot = useCallback((data: Bootstrap) => setBoot(data), []);
   const refresh = useCallback(async () => {
     const data = await api<Bootstrap>("bootstrap");
@@ -685,16 +724,24 @@ export function App() {
           </IconButton>
         </div>
         {boot.player.track && !collapsed && (
-          <button
-            className="sidebar-now-playing"
-            onClick={() => setImmersive(true)}
-            title="打开正在播放"
-          >
-            <Cover track={boot.player.track} size={45} />
-            <span>
-              <strong>{boot.player.track.title}</strong>
-              <small>{boot.player.track.artist}</small>
-            </span>
+          <div className="sidebar-now-playing">
+            <button
+              className="sidebar-track-cover"
+              onClick={() => setImmersive(true)}
+              title="打开正在播放"
+            >
+              <Cover track={boot.player.track} size={45} />
+            </button>
+            <div className="sidebar-track-copy">
+              <button
+                className="sidebar-track-title"
+                onClick={() => setImmersive(true)}
+                title={boot.player.track.title}
+              >
+                <strong>{boot.player.track.title}</strong>
+              </button>
+              <ArtistLink track={boot.player.track} onArtist={openArtist} />
+            </div>
             {boot.player.playing && (
               <span className="playing-indicator">
                 <i />
@@ -702,7 +749,7 @@ export function App() {
                 <i />
               </span>
             )}
-          </button>
+          </div>
         )}
         <button
           className="sidebar-account"
@@ -845,6 +892,7 @@ export function App() {
                   </Empty>
                 ) : visible.length ? (
                   <TrackList
+                    onArtist={openArtist}
                     tracks={visible}
                     player={boot.player}
                     onPlay={(t) => play(t, visible)}
@@ -874,6 +922,7 @@ export function App() {
         )}
         {(page === "discover" || page === "charts") && (
           <DiscoverPage
+            onArtist={openArtist}
             mode={page}
             name={boot.account?.name}
             shelves={shelves}
@@ -960,6 +1009,7 @@ export function App() {
                 {searchError && <p className="error">{searchError}</p>}
                 {searchTracks.length ? (
                   <TrackList
+                    onArtist={openArtist}
                     tracks={searchTracks}
                     player={boot.player}
                     onPlay={(t) => play(t, searchTracks)}
@@ -1147,6 +1197,31 @@ export function App() {
             }}
           />
         )}
+        {route.page === "artist" && (
+          <ArtistPage
+            key={`artist:${route.artist.mid}`}
+            artist={route.artist}
+            player={boot.player}
+            onAlbum={(album) => setPage({ page: "album", album })}
+            onArtist={openArtist}
+            onPlay={play}
+            onLike={(track) => chooseFavorite(track)}
+            onContext={(track, x, y, queue) => setMenu({ track, x, y, queue })}
+            notify={notify}
+          />
+        )}
+        {route.page === "album" && (
+          <AlbumPage
+            key={`album:${route.album.mid}:${route.album.type}:${route.album.id}`}
+            album={route.album}
+            player={boot.player}
+            onArtist={openArtist}
+            onPlay={play}
+            onLike={(track) => chooseFavorite(track)}
+            onContext={(track, x, y, queue) => setMenu({ track, x, y, queue })}
+            notify={notify}
+          />
+        )}
         {queueOpen && (
           <aside className="queue-panel">
             <header>
@@ -1176,13 +1251,23 @@ export function App() {
                   }
                   key={`${track.id}-${i}`}
                 >
-                  <button onClick={() => play(track, queue)}>
+                  <button
+                    className="queue-art"
+                    onClick={() => play(track, queue)}
+                    title={"播放 " + track.title}
+                  >
                     <Cover track={track} size={38} />
-                    <span>
-                      <strong>{track.title}</strong>
-                      <small>{track.artist}</small>
-                    </span>
                   </button>
+                  <div className="queue-track-copy">
+                    <button
+                      className="queue-track-title"
+                      onClick={() => play(track, queue)}
+                      title={track.title}
+                    >
+                      <strong>{track.title}</strong>
+                    </button>
+                    <ArtistLink track={track} onArtist={openArtist} />
+                  </div>
                   <IconButton
                     title="从队列移除"
                     onClick={() =>
@@ -1201,6 +1286,7 @@ export function App() {
         )}
       </main>
       <PlayerBar
+        onArtist={openArtist}
         player={boot.player}
         command={command}
         onFavorite={() => {
@@ -1231,6 +1317,7 @@ export function App() {
       )}
       {immersive && (
         <Immersive
+          onArtist={openArtist}
           player={boot.player}
           command={command}
           onClose={() => setImmersive(false)}
@@ -1305,6 +1392,20 @@ export function App() {
             加入播放队列
           </MenuItem>
           <hr />
+          {(menu.track.artistMid ||
+            menu.track.bvid ||
+            menu.track.aid ||
+            menu.track.audioId) && (
+            <MenuItem
+              icon={<UserRound size={16} />}
+              onClick={() => {
+                openArtist(menu.track);
+                setMenu(null);
+              }}
+            >
+              查看 UP 主主页
+            </MenuItem>
+          )}
           <MenuItem
             icon={<Heart size={16} />}
             onClick={() => {

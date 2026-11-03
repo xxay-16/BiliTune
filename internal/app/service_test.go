@@ -214,3 +214,24 @@ func TestDownloadResumeAndSanitizedPath(t *testing.T) {
 		t.Fatal("download corrupted")
 	}
 }
+
+func TestResolvedArtistIsSavedToOldHistory(t *testing.T) {
+	s, _ := setup(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": map[string]any{"bvid": "BV1234567890", "aid": 1, "owner": map[string]any{"mid": 123, "name": "UP", "face": "https://i0.hdslb.com/face.jpg"}}})
+	}))
+	defer server.Close()
+	s.client.APIBase = server.URL
+	track := model.Track{ID: "old", BVID: "BV1234567890", Artist: "UP"}
+	s.state.History = []model.Track{track}
+	s.state.Queue = []model.Track{track}
+	s.state.Player.Track = &track
+	artist, err := s.ResolveArtist(context.Background(), track)
+	if err != nil || artist.MID != 123 {
+		t.Fatal(artist, err)
+	}
+	_, saved, err := store.Open(s.store.Dir)
+	if err != nil || saved.History[0].ArtistMID != 123 || saved.Queue[0].ArtistMID != 123 || saved.Player.Track.ArtistMID != 123 {
+		t.Fatal("resolved creator was not persisted", err)
+	}
+}
