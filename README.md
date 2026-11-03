@@ -1,10 +1,38 @@
 # BiliTune Desktop
 
+<p align="center">
+  <img src="frontend/public/logo.png" alt="BiliTune" width="100" />
+</p>
+
+[![Windows Build](https://github.com/xxay-16/BiliTune/actions/workflows/windows-build.yml/badge.svg)](https://github.com/xxay-16/BiliTune/actions/workflows/windows-build.yml)
+
 基于 **Go + Wails 3.0.0** 的哔哩哔哩桌面音乐播放器。当前提供 Windows 10/11 x64 版，不再包含 Flutter、Android 或手机版构建。
 
-## 使用
+Go 负责 Bilibili 接口、播放与下载调度、本地数据和 Windows 系统集成；React + TypeScript 构建桌面界面，音频由 libmpv 播放。
 
-在 [GitHub Actions](https://github.com/xxay-16/BiliTune/actions/workflows/windows-build.yml) 下载最新构建的 Windows 安装包或便携 ZIP。正式标签版本在 [Releases](https://github.com/xxay-16/BiliTune/releases) 发布。需要 Microsoft Edge WebView2 Runtime；多数 Windows 10/11 已自带。
+## 下载与安装
+
+在 [Windows Build](https://github.com/xxay-16/BiliTune/actions/workflows/windows-build.yml) 选择最近一次成功的构建，在页面底部的 **Artifacts** 下载产物。下载 Actions 产物需要登录 GitHub。
+
+| 文件 | 用途 |
+| --- | --- |
+| `BiliTune-Setup-<版本>-<提交>.exe` | Windows 安装包，按向导安装 |
+| `BiliTune-<版本>-<提交>-windows-x64-portable.zip` | 便携版，完整解压后运行 `bilitune.exe` |
+| `SHA256SUMS.txt` | 核对安装包和便携包的 SHA-256 校验值 |
+
+文件名包含版本号和 Git 提交的前 7 位，便于确认正在试用的构建。正式标签版本发布后，也可在 [Releases](https://github.com/xxay-16/BiliTune/releases) 下载。
+
+运行需要 **Windows 10/11 x64** 和 **Microsoft Edge WebView2 Runtime**。便携版请保留 `bilitune.exe` 同目录的 `libmpv-2.dll`。
+
+## 开始使用
+
+1. 启动 BiliTune，通过右上角或设置页登录 Bilibili，支持二维码和 Cookie 登录。
+2. 打开“我的歌单”，选择收藏夹。应用会读取全部分页，收藏夹列表与歌曲列表可以分别滚动。
+3. 单击歌曲播放；右键可添加到收藏夹、移动到其他收藏夹、从当前收藏夹删除、下载音轨或加入播放队列。
+4. 在设置页录制全局组合快捷键。键盘媒体键可控制播放、暂停、停止、上一曲和下一曲。
+5. 隐藏到托盘后可继续播放；右键托盘图标打开固定窄宽度菜单，长歌曲名会自动滚动。
+
+## 功能
 
 - 二维码或 Cookie 登录；凭据仅保存在本机，并使用 Windows DPAPI 加密。
 - 收藏夹作为歌单，完整读取全部分页；支持搜索歌单、创建收藏夹、歌曲右键添加、移动和删除。
@@ -17,19 +45,75 @@
 - 托盘后台播放，180 DIP 固定宽度菜单，长标题自动横向滚动。
 - 深浅主题、开机启动、关闭窗口行为、版本检查。
 
-升级前请从托盘退出旧版，避免两个播放器同时响应媒体键。首次启动自动读取旧版 `%APPDATA%/com.wep56/bilitune/shared_preferences.json`，导入设置、登录、播放位置、队列、历史和下载任务。原文件保持原样；新数据位于其下的 `desktop` 文件夹。下载文件不会因删除记录而删除。
+## 从 Flutter 版升级
+
+先从系统托盘退出旧版，再启动新版本，以免两个播放器同时响应媒体键。
+
+首次启动会自动导入旧版登录信息、设置、播放位置、队列、历史、下载任务和隐藏收藏夹设置。仅在新数据目录还没有 `state.json` 时执行导入，旧文件保持原样。
+
+| 数据 | 默认位置 |
+| --- | --- |
+| 旧版设置 | `%APPDATA%\com.wep56\bilitune\shared_preferences.json` |
+| 新版设置、队列和历史 | `%APPDATA%\com.wep56\bilitune\desktop\state.json` |
+| 新版登录凭据 | `%APPDATA%\com.wep56\bilitune\desktop\session.dat` |
+| 默认音频下载目录 | `%USERPROFILE%\Downloads\BiliTune` |
+
+登录凭据由 Windows DPAPI 加密保存在本机。未完成的下载任务在重启后以暂停状态恢复，可手动继续；移除下载记录会保留音频文件。
+
+## 常见问题
+
+**Bilibili 请求失败 / HTTP 412**
+
+检查 Bilibili 登录状态，稍后刷新重试。线上接口受账号权限、网络和 Bilibili 风控影响；未登录的在线查询在开发验证中出现过 HTTP 412，登录后的同步与收藏夹修改还需在实际账号环境中验证。
+
+**快捷键无响应或冲突**
+
+先退出托盘中残留的旧版 BiliTune，再检查设置页的快捷键冲突提示。组合键被其他程序占用时，可重新录制。部分键盘的媒体键需要配合 Fn 使用。
+
+**上一曲和停止播放的行为**
+
+无论已经播放多久，上一曲都会直接切换到队列中的上一首。停止播放会回到曲首并保留队列。
+
+**音频区收藏管理**
+
+当前收藏夹管理支持视频音轨。音频区 AU 条目支持直达、播放与下载，其收藏管理需要在 Bilibili 中操作。
 
 ## 构建 Windows
 
-依赖：Go **1.27.3**、Node.js **24**、7-Zip；生成安装包还需 Inno Setup 6/7。Go 代码不依赖 CGo；音频 DLL 按固定 SHA-256 下载校验。
+与 CI 对齐使用以下依赖：
+
+| 依赖 | 版本 / 用途 |
+| --- | --- |
+| Go | **1.27.3**，编译后端和桌面程序 |
+| Wails | **3.0.0**，构建脚本自动安装对应 CLI |
+| Node.js | **24**，构建前端 |
+| 7-Zip | 解压音频运行库 |
+| Inno Setup | **6 或 7**，生成 EXE 安装包时使用 |
+
+Go 桌面程序使用 `CGO_ENABLED=0` 构建；脚本会下载固定版本的 libmpv，并核对压缩包和 DLL 的 SHA-256。
 
 ```powershell
+git clone https://github.com/xxay-16/BiliTune.git
+cd BiliTune
+
 ./scripts/build-windows.ps1
 ./bin/bilitune.exe
-./scripts/package-windows.ps1 -Version 0.2.0
+./scripts/package-windows.ps1
 ```
 
-产物位于 `dist/windows`，包括 EXE 安装包、便携 ZIP 和 SHA-256 文件。仅生成便携版可加 `-SkipInstaller`。每次推送 main 自动执行测试并打包，产物保留 30 天；推送与版本号一致的 `v0.2.0` 标签会发布 Release。
+程序输出到 `bin`，分发产物位于 `dist/windows`，包括 EXE 安装包、便携 ZIP 和校验文件。仅生成便携版可运行：
+
+```powershell
+./scripts/package-windows.ps1 -SkipInstaller
+```
+
+打包脚本会保留已有产物；重复打包可通过 `-Version` 指定新的文件名版本，或用 `-OutputDir` 指定其他输出目录。
+
+## 自动构建与发布
+
+[Windows Build 工作流](.github/workflows/windows-build.yml) 会在推送 `main` / `master`、提交 Pull Request 或手动触发时执行测试、编译和 Windows 打包，产物保留 **30 天**。
+
+推送与 `internal/model/model.go` 中版本号一致的标签（例如 `v0.2.0`）时，工作流在构建成功后发布 GitHub Release，附带安装包、便携包和校验文件。日常分支推送的安装包从 Actions 下载。
 
 ## 开发与验证
 
